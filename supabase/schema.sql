@@ -95,6 +95,7 @@ alter table places add column if not exists source text;
 create table if not exists resources (
   id uuid primary key default gen_random_uuid(),
   trip_id uuid not null references trips(id) on delete cascade,
+  city_stop_id uuid references city_stops(id) on delete cascade,
   category text not null,
   content text,
   sort_order integer not null default 0,

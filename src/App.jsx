@@ -148,7 +148,7 @@ export default function App() {
           <AppIdeasView />
         ) : section === 'resources' ? (
           activeCityStop ? (
-            <ResourcesView tripId={activeCityStop.trip_id} />
+            <ResourcesView tripId={activeCityStop.trip_id} cityStopId={activeCityStop.id} cityName={activeCityStop.city_name} />
           ) : (
             <p className="py-6 text-center font-body text-sm text-ink/40">No active trip to show resources for.</p>
           )

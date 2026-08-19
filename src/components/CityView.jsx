@@ -3,6 +3,7 @@ import { formatInTimeZone, toZonedTime } from 'date-fns-tz'
 import { supabase } from '../lib/supabaseClient'
 import TagPicker from './TagPicker'
 import PlaceRow from './PlaceRow'
+import DayNotes from './DayNotes'
 
 function getDayList(cityStop) {
   const tz = cityStop.timezone || 'America/New_York'
@@ -463,9 +464,19 @@ export default function CityView({ cityStop, view }) {
                   : 'border-line bg-card text-ink/60 hover:border-gold hover:text-ink'
               }`}
             >
-              💭 Ideas
+              📝 Other
             </button>
           </div>
+
+          {selectedDay && selectedDay !== 'ideas' && (
+            <p className="mb-2 font-display text-base font-semibold text-teal">{formatDateHeader(selectedDay)}</p>
+          )}
+
+          {selectedDay && selectedDay !== 'ideas' && <DayNotes cityStopId={cityStop.id} date={selectedDay} />}
+
+          {selectedDay && selectedDay !== 'ideas' && (
+            <p className="mb-2 font-mono text-[10px] uppercase tracking-wide text-ink/40">Scheduled places</p>
+          )}
 
           <div className="rounded-lg border border-line bg-card px-4">
             {loading && <p className="py-6 text-center font-mono text-xs text-ink/40">Loading…</p>}
@@ -496,9 +507,6 @@ export default function CityView({ cityStop, view }) {
 
             {!loading && selectedDay !== 'ideas' && selectedDay && (
               <>
-                <p className="px-1 py-2 font-display text-sm font-semibold text-teal">
-                  {formatDateHeader(selectedDay)}
-                </p>
                 {(!itineraryByDate[selectedDay] || itineraryByDate[selectedDay].length === 0) && (
                   <p className="py-6 text-center font-body text-sm text-ink/40">
                     Nothing scheduled yet — schedule an idea to see it here.

@@ -48,6 +48,11 @@ create table if not exists places (
   scheduled_date date,
   scheduled_time time,
   sort_order integer not null default 0,
+  address text,
+  lat double precision,
+  lng double precision,
+  maps_url text,
+  google_place_id text,
   created_at timestamptz not null default now(),
   completed_at timestamptz
 );
@@ -119,6 +124,26 @@ alter table app_ideas enable row level security;
 
 create policy "Allow all for anon (personal use only) - app_ideas"
   on app_ideas
+  for all
+  using (true)
+  with check (true);
+
+-- Free-form notes per itinerary day (bold, nested bullets, interactive
+-- checklists, links). One row per city_stop + calendar date.
+create table if not exists day_notes (
+  id uuid primary key default gen_random_uuid(),
+  city_stop_id uuid not null references city_stops(id) on delete cascade,
+  date date not null,
+  content text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique(city_stop_id, date)
+);
+
+alter table day_notes enable row level security;
+
+create policy "Allow all for anon (personal use only) - day_notes"
+  on day_notes
   for all
   using (true)
   with check (true);

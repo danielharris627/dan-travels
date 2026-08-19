@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabaseClient'
 import TagPicker from './TagPicker'
 import PlaceRow from './PlaceRow'
 import DayNotes from './DayNotes'
+import OtherNotes from './OtherNotes'
 
 function getDayList(cityStop) {
   const tz = cityStop.timezone || 'America/New_York'
@@ -34,6 +35,9 @@ export default function CityView({ cityStop, view }) {
   const [error, setError] = useState(null)
 
   const [tagFilter, setTagFilter] = useState(null)
+  const [sortMode, setSortMode] = useState('title') // 'title' | 'area' | 'borough' | 'distance'
+  const [userLocation, setUserLocation] = useState(null)
+  const [locationError, setLocationError] = useState(null)
   const [selectedBorough, setSelectedBorough] = useState(null)
   const [selectedArea, setSelectedArea] = useState(null)
   const [hiddenAreas, setHiddenAreas] = useState([])
@@ -102,7 +106,42 @@ export default function CityView({ cityStop, view }) {
     itineraryByDate[date].sort((a, b) => (a.scheduled_time || '99:99').localeCompare(b.scheduled_time || '99:99'))
   }
 
-  const placesFiltered = tagFilter ? allPlaces.filter((p) => p.tags?.includes(tagFilter)) : []
+  const placesFiltered = (() => {
+    let list
+    if (tagFilter === '__all__') list = allPlaces
+    else if (tagFilter) list = allPlaces.filter((p) => p.tags?.includes(tagFilter))
+    else return []
+
+    const sorted = [...list]
+    if (sortMode === 'title') sorted.sort((a, b) => a.title.localeCompare(b.title))
+    else if (sortMode === 'area') sorted.sort((a, b) => (a.area || '').localeCompare(b.area || ''))
+    else if (sortMode === 'borough') sorted.sort((a, b) => (a.borough || '').localeCompare(b.borough || '') || (a.area || '').localeCompare(b.area || ''))
+    else if (sortMode === 'distance' && userLocation) {
+      const dist = (p) => {
+        if (!p.lat || !p.lng) return Infinity
+        const R = 6371
+        const dLat = ((p.lat - userLocation.lat) * Math.PI) / 180
+        const dLng = ((p.lng - userLocation.lng) * Math.PI) / 180
+        const a =
+          Math.sin(dLat / 2) ** 2 +
+          Math.cos((userLocation.lat * Math.PI) / 180) * Math.cos((p.lat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+      }
+      sorted.sort((a, b) => dist(a) - dist(b))
+    }
+    return sorted
+  })()
+
+  function handleSortChange(mode) {
+    setSortMode(mode)
+    if (mode === 'distance' && !userLocation) {
+      setLocationError(null)
+      navigator.geolocation.getCurrentPosition(
+        (pos) => setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        () => setLocationError("Couldn't get your location — check browser permissions.")
+      )
+    }
+  }
 
   const boroughOptions = [...new Set(allPlaces.map((p) => p.borough).filter(Boolean))].sort()
   const areaOptionsInBorough = selectedBorough
@@ -327,58 +366,50 @@ export default function CityView({ cityStop, view }) {
             <p className="mb-2 font-display text-base font-semibold text-teal">{formatDateHeader(selectedDay)}</p>
           )}
           {selectedDay && selectedDay !== 'other' && <DayNotes cityStopId={cityStop.id} date={selectedDay} />}
+          {selectedDay === 'other' && <OtherNotes cityStopId={cityStop.id} />}
           {selectedDay && selectedDay !== 'other' && (
             <p className="mb-2 font-mono text-[10px] uppercase tracking-wide text-ink/40">Scheduled places</p>
           )}
 
-          <div className="rounded-lg border border-line bg-card px-4">
-            {loading && <p className="py-6 text-center font-mono text-xs text-ink/40">Loading…</p>}
+          {loading && <p className="py-6 text-center font-mono text-xs text-ink/40">Loading…</p>}
 
-            {!loading && selectedDay === 'other' && (
-              <>
-                {otherItems.length === 0 && (
-                  <p className="py-6 text-center font-body text-sm text-ink/40">
-                    Nothing here yet. Go to Places or Areas and use "+ Add to itinerary" on things you've decided on.
-                  </p>
-                )}
-                {otherItems.map((item, idx) => (
-                  <PlaceRow
-                    key={item.id}
-                    item={item}
-                    tagLookup={tagLookup}
-                    mode="other"
-                    dayList={dayList}
-                    showReorder
-                    onMoveUp={idx > 0 ? () => handleMoveOther(item, 'up') : null}
-                    onMoveDown={idx < otherItems.length - 1 ? () => handleMoveOther(item, 'down') : null}
-                    onRemove={handleRemove}
-                    onSchedule={handleSchedule}
-                    onUpdate={handleUpdatePlace}
-                  />
-                ))}
-              </>
-            )}
+          {!loading && selectedDay === 'other' && (
+            <>
+              {otherItems.length === 0 && (
+                <p className="py-6 text-center font-body text-sm text-ink/40 rounded-lg border border-dashed border-line">
+                  Nothing added yet. Go to Places or Areas and use "+ Add to itinerary" on things you've decided on.
+                </p>
+              )}
+              {otherItems.map((item, idx) => (
+                <PlaceRow
+                  key={item.id}
+                  item={item}
+                  tagLookup={tagLookup}
+                  mode="other"
+                  dayList={dayList}
+                  showReorder
+                  onMoveUp={idx > 0 ? () => handleMoveOther(item, 'up') : null}
+                  onMoveDown={idx < otherItems.length - 1 ? () => handleMoveOther(item, 'down') : null}
+                  onRemove={handleRemove}
+                  onSchedule={handleSchedule}
+                  onUpdate={handleUpdatePlace}
+                />
+              ))}
+            </>
+          )}
 
-            {!loading && selectedDay !== 'other' && selectedDay && (
-              <>
-                {(!itineraryByDate[selectedDay] || itineraryByDate[selectedDay].length === 0) && (
-                  <p className="py-6 text-center font-body text-sm text-ink/40">Nothing scheduled yet — schedule something from Other to see it here.</p>
-                )}
-                {itineraryByDate[selectedDay]?.map((item) => (
-                  <PlaceRow
-                    key={item.id}
-                    item={item}
-                    tagLookup={tagLookup}
-                    mode="scheduled"
-                    showReorder={false}
-                    onRemove={handleRemove}
-                    onUnschedule={handleUnschedule}
-                    onUpdate={handleUpdatePlace}
-                  />
-                ))}
-              </>
-            )}
-          </div>
+          {!loading && selectedDay !== 'other' && selectedDay && (
+            <>
+              {(!itineraryByDate[selectedDay] || itineraryByDate[selectedDay].length === 0) && (
+                <p className="py-6 text-center font-body text-sm text-ink/40 rounded-lg border border-dashed border-line">
+                  Nothing scheduled yet — schedule something from Other to see it here.
+                </p>
+              )}
+              {itineraryByDate[selectedDay]?.map((item) => (
+                <PlaceRow key={item.id} item={item} tagLookup={tagLookup} mode="scheduled" showReorder={false} onRemove={handleRemove} onUnschedule={handleUnschedule} onUpdate={handleUpdatePlace} />
+              ))}
+            </>
+          )}
         </>
       )}
 
@@ -454,26 +485,15 @@ export default function CityView({ cityStop, view }) {
                 </>
               )}
 
-              <div className="rounded-lg border border-line bg-card px-4">
-                {loading && <p className="py-6 text-center font-mono text-xs text-ink/40">Loading…</p>}
-                {!loading && !selectedBorough && <p className="py-6 text-center font-body text-sm text-ink/40">Select a borough above.</p>}
-                {!loading && selectedBorough && !selectedArea && <p className="py-6 text-center font-body text-sm text-ink/40">Select an area above.</p>}
-                {!loading && selectedArea && areaFiltered.length === 0 && <p className="py-6 text-center font-body text-sm text-ink/40">Nothing saved here yet.</p>}
-                {!loading &&
-                  selectedArea &&
-                  areaFiltered.map((item) => (
-                    <PlaceRow
-                      key={item.id}
-                      item={item}
-                      tagLookup={tagLookup}
-                      mode="reference"
-                      showReorder={false}
-                      onRemove={handleRemove}
-                      onAddToItinerary={handleAddToItinerary}
-                      onUpdate={handleUpdatePlace}
-                    />
-                  ))}
-              </div>
+              {loading && <p className="py-6 text-center font-mono text-xs text-ink/40">Loading…</p>}
+              {!loading && !selectedBorough && <p className="py-6 text-center font-body text-sm text-ink/40">Select a borough above.</p>}
+              {!loading && selectedBorough && !selectedArea && <p className="py-6 text-center font-body text-sm text-ink/40">Select an area above.</p>}
+              {!loading && selectedArea && areaFiltered.length === 0 && <p className="py-6 text-center font-body text-sm text-ink/40">Nothing saved here yet.</p>}
+              {!loading &&
+                selectedArea &&
+                areaFiltered.map((item) => (
+                  <PlaceRow key={item.id} item={item} tagLookup={tagLookup} mode="reference" showReorder={false} onRemove={handleRemove} onAddToItinerary={handleAddToItinerary} onUpdate={handleUpdatePlace} />
+                ))}
             </>
           )}
         </>
@@ -541,35 +561,61 @@ export default function CityView({ cityStop, view }) {
             )}
           </form>
 
-          <div className="mb-4 flex flex-wrap gap-2">
-            {tags.map((opt) => {
-              const isActive = tagFilter === opt.label
-              return (
-                <button
-                  key={opt.id}
-                  type="button"
-                  onClick={() => setTagFilter((prev) => (prev === opt.label ? null : opt.label))}
-                  className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 font-body text-sm transition-colors ${
-                    isActive ? 'border-teal bg-teal text-paper' : 'border-line bg-card text-ink/60 hover:border-teal hover:text-ink'
-                  }`}
-                >
-                  <span aria-hidden="true">{opt.icon}</span>
-                  {opt.label}
-                </button>
-              )
-            })}
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setTagFilter((prev) => (prev === '__all__' ? null : '__all__'))}
+                className={`rounded-full border px-3 py-1.5 font-body text-sm transition-colors ${
+                  tagFilter === '__all__' ? 'border-teal bg-teal text-paper' : 'border-line bg-card text-ink/60 hover:border-teal hover:text-ink'
+                }`}
+              >
+                ⭐ All
+              </button>
+              {tags.map((opt) => {
+                const isActive = tagFilter === opt.label
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setTagFilter((prev) => (prev === opt.label ? null : opt.label))}
+                    className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 font-body text-sm transition-colors ${
+                      isActive ? 'border-teal bg-teal text-paper' : 'border-line bg-card text-ink/60 hover:border-teal hover:text-ink'
+                    }`}
+                  >
+                    <span aria-hidden="true">{opt.icon}</span>
+                    {opt.label}
+                  </button>
+                )
+              })}
+            </div>
           </div>
 
-          <div className="rounded-lg border border-line bg-card px-4">
-            {loading && <p className="py-6 text-center font-mono text-xs text-ink/40">Loading…</p>}
-            {!loading && !tagFilter && <p className="py-6 text-center font-body text-sm text-ink/40">Select a category above.</p>}
-            {!loading && tagFilter && placesFiltered.length === 0 && <p className="py-6 text-center font-body text-sm text-ink/40">Nothing here yet.</p>}
-            {!loading &&
-              tagFilter &&
-              placesFiltered.map((item) => (
-                <PlaceRow key={item.id} item={item} tagLookup={tagLookup} mode="reference" showReorder={false} onRemove={handleRemove} onAddToItinerary={handleAddToItinerary} onUpdate={handleUpdatePlace} />
-              ))}
-          </div>
+          {tagFilter && (
+            <div className="mb-3 flex items-center gap-2">
+              <span className="font-mono text-[10px] uppercase tracking-wide text-ink/40">Sort:</span>
+              <select
+                value={sortMode}
+                onChange={(e) => handleSortChange(e.target.value)}
+                className="rounded-md border border-line bg-card px-2 py-1 font-mono text-xs text-ink focus:border-teal focus:outline-none"
+              >
+                <option value="title">Alphabetical</option>
+                <option value="area">Area (A–Z)</option>
+                <option value="borough">Borough</option>
+                <option value="distance">Closest to me</option>
+              </select>
+              {locationError && <span className="font-mono text-[10px] text-stamp">{locationError}</span>}
+            </div>
+          )}
+
+          {loading && <p className="py-6 text-center font-mono text-xs text-ink/40">Loading…</p>}
+          {!loading && !tagFilter && <p className="py-6 text-center font-body text-sm text-ink/40 rounded-lg border border-dashed border-line">Select a category above.</p>}
+          {!loading && tagFilter && placesFiltered.length === 0 && <p className="py-6 text-center font-body text-sm text-ink/40 rounded-lg border border-dashed border-line">Nothing here yet.</p>}
+          {!loading &&
+            tagFilter &&
+            placesFiltered.map((item) => (
+              <PlaceRow key={item.id} item={item} tagLookup={tagLookup} mode="reference" showReorder={false} onRemove={handleRemove} onAddToItinerary={handleAddToItinerary} onUpdate={handleUpdatePlace} />
+            ))}
         </>
       )}
     </div>

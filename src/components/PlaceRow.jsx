@@ -61,7 +61,7 @@ export default function PlaceRow({
 
   if (editing) {
     return (
-      <div className="border-b border-line px-1 py-3 last:border-b-0">
+      <div className="rounded-lg border border-line bg-card p-3 mb-2">
         <input
           value={draftTitle}
           onChange={(e) => setDraftTitle(e.target.value)}
@@ -93,8 +93,8 @@ export default function PlaceRow({
   }
 
   return (
-    <div className="group border-b border-line px-1 py-3 last:border-b-0">
-      <div className="flex items-start gap-3">
+    <div className="rounded-lg border border-line bg-card p-3 mb-2">
+      <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline gap-2">
             <p className="font-body text-[15px] text-ink">{item.title}</p>
@@ -118,9 +118,7 @@ export default function PlaceRow({
             </div>
           )}
 
-          {item.notes && (
-            <p className="mt-1.5 whitespace-pre-wrap font-body text-sm text-ink/60">{renderNotesWithLinks(item.notes)}</p>
-          )}
+          {item.notes && <p className="mt-1.5 whitespace-pre-wrap font-body text-sm text-ink/60">{renderNotesWithLinks(item.notes)}</p>}
 
           <div className="mt-1.5 flex flex-wrap items-center gap-3">
             {(item.maps_url || (item.lat && item.lng)) && (
@@ -130,13 +128,9 @@ export default function PlaceRow({
                 rel="noreferrer"
                 className="font-mono text-[10px] uppercase tracking-wide text-teal underline decoration-dotted underline-offset-2 hover:text-teal/70"
               >
-                🗺️ Open in Maps
+                🗺️ Maps
               </a>
             )}
-
-            <button onClick={startEdit} className="font-mono text-[10px] uppercase tracking-wide text-ink/40 underline decoration-dotted underline-offset-2 hover:text-ink">
-              Edit
-            </button>
 
             {mode === 'reference' && !item.in_itinerary && (
               <button onClick={() => onAddToItinerary(item)} className="font-mono text-[10px] uppercase tracking-wide text-teal underline decoration-dotted underline-offset-2 hover:text-teal/70">
@@ -191,24 +185,32 @@ export default function PlaceRow({
           )}
         </div>
 
-        {showReorder && (
-          <div className="flex flex-shrink-0 flex-col items-center gap-0.5 pt-0.5">
-            <button onClick={onMoveUp} disabled={!onMoveUp} aria-label="Move up" className="text-ink/40 hover:text-ink disabled:cursor-default disabled:opacity-20">
-              ▲
-            </button>
-            <button onClick={onMoveDown} disabled={!onMoveDown} aria-label="Move down" className="text-ink/40 hover:text-ink disabled:cursor-default disabled:opacity-20">
-              ▼
-            </button>
-          </div>
-        )}
-
-        <button
-          onClick={() => onRemove(item)}
-          className="flex-shrink-0 font-mono text-xs text-ink/30 opacity-0 transition-opacity hover:text-stamp group-hover:opacity-100"
-          aria-label={`Remove ${item.title}`}
-        >
-          remove
-        </button>
+        <div className="flex flex-shrink-0 items-center gap-1">
+          {showReorder && (
+            <div className="mr-1 flex flex-col items-center gap-0.5">
+              <button onClick={onMoveUp} disabled={!onMoveUp} aria-label="Move up" className="text-ink/40 hover:text-ink disabled:cursor-default disabled:opacity-20">
+                ▲
+              </button>
+              <button onClick={onMoveDown} disabled={!onMoveDown} aria-label="Move down" className="text-ink/40 hover:text-ink disabled:cursor-default disabled:opacity-20">
+                ▼
+              </button>
+            </div>
+          )}
+          <button
+            onClick={startEdit}
+            aria-label={`Edit ${item.title}`}
+            className="flex h-6 w-6 items-center justify-center rounded-full border border-line text-[10px] text-ink/50 hover:border-teal hover:text-ink"
+          >
+            ✏
+          </button>
+          <button
+            onClick={() => onRemove(item)}
+            aria-label={`Remove ${item.title}`}
+            className="flex h-6 w-6 items-center justify-center rounded-full border border-line text-[10px] text-ink/50 hover:border-stamp hover:text-stamp"
+          >
+            ✕
+          </button>
+        </div>
       </div>
     </div>
   )

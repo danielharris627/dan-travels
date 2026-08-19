@@ -151,6 +151,22 @@ create policy "Allow all for anon (personal use only) - day_notes"
   using (true)
   with check (true);
 
+-- One free-form notes block per city stop for the "Other" tab — same
+-- purpose as day_notes but not tied to a specific date.
+create table if not exists other_notes (
+  city_stop_id uuid primary key references city_stops(id) on delete cascade,
+  content text,
+  updated_at timestamptz not null default now()
+);
+
+alter table other_notes enable row level security;
+
+create policy "Allow all for anon (personal use only) - other_notes"
+  on other_notes
+  for all
+  using (true)
+  with check (true);
+
 -- Areas you can hide from the filter row per city stop (e.g. "Sunset Park"
 -- with just one saved place) without deleting the places themselves.
 create table if not exists hidden_areas (

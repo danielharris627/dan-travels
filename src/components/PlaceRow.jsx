@@ -199,14 +199,14 @@ export default function PlaceRow({
           <button
             onClick={startEdit}
             aria-label={`Edit ${item.title}`}
-            className="flex h-6 w-6 items-center justify-center rounded-full border border-line text-[10px] text-ink/50 hover:border-teal hover:text-ink"
+            className="flex h-6 w-6 items-center justify-center text-sm text-ink/35 hover:text-teal"
           >
             ✏
           </button>
           <button
             onClick={() => onRemove(item)}
             aria-label={`Remove ${item.title}`}
-            className="flex h-6 w-6 items-center justify-center rounded-full border border-line text-[10px] text-ink/50 hover:border-stamp hover:text-stamp"
+            className="flex h-6 w-6 items-center justify-center text-sm text-ink/35 hover:text-stamp"
           >
             ✕
           </button>

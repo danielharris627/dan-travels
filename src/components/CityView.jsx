@@ -36,10 +36,16 @@ export default function CityView({ cityStop, view }) {
 
   const [tagFilter, setTagFilter] = useState(null)
   const [sortMode, setSortMode] = useState('title') // 'title' | 'area' | 'borough' | 'distance'
+  const [sortBorough, setSortBorough] = useState(null)
+  const [sortArea, setSortArea] = useState(null)
   const [userLocation, setUserLocation] = useState(null)
   const [locationError, setLocationError] = useState(null)
+  const [addFormOpen, setAddFormOpen] = useState(false)
+  const [tagPickerOpen, setTagPickerOpen] = useState(true)
   const [selectedBorough, setSelectedBorough] = useState(null)
   const [selectedArea, setSelectedArea] = useState(null)
+  const [areaTagFilter, setAreaTagFilter] = useState(null)
+  const [areaTagPickerOpen, setAreaTagPickerOpen] = useState(true)
   const [hiddenAreas, setHiddenAreas] = useState([])
   const [showHiddenAreas, setShowHiddenAreas] = useState(false)
 
@@ -106,17 +112,25 @@ export default function CityView({ cityStop, view }) {
     itineraryByDate[date].sort((a, b) => (a.scheduled_time || '99:99').localeCompare(b.scheduled_time || '99:99'))
   }
 
+  const placesByTag = tagFilter === '__all__' ? allPlaces : tagFilter ? allPlaces.filter((p) => p.tags?.includes(tagFilter)) : []
+  const sortBoroughOptions = [...new Set(placesByTag.map((p) => p.borough).filter(Boolean))].sort()
+  const sortAreaOptions = [...new Set(placesByTag.map((p) => p.area).filter(Boolean))].sort()
+
   const placesFiltered = (() => {
-    let list
-    if (tagFilter === '__all__') list = allPlaces
-    else if (tagFilter) list = allPlaces.filter((p) => p.tags?.includes(tagFilter))
-    else return []
+    if (!tagFilter) return []
+    let list = placesByTag
+    if (sortMode === 'borough') {
+      if (!sortBorough) return []
+      list = list.filter((p) => p.borough === sortBorough)
+    } else if (sortMode === 'area') {
+      if (!sortArea) return []
+      list = list.filter((p) => p.area === sortArea)
+    }
 
     const sorted = [...list]
-    if (sortMode === 'title') sorted.sort((a, b) => a.title.localeCompare(b.title))
-    else if (sortMode === 'area') sorted.sort((a, b) => (a.area || '').localeCompare(b.area || ''))
-    else if (sortMode === 'borough') sorted.sort((a, b) => (a.borough || '').localeCompare(b.borough || '') || (a.area || '').localeCompare(b.area || ''))
-    else if (sortMode === 'distance' && userLocation) {
+    if (sortMode === 'title' || sortMode === 'borough' || sortMode === 'area') {
+      sorted.sort((a, b) => a.title.localeCompare(b.title))
+    } else if (sortMode === 'distance' && userLocation) {
       const dist = (p) => {
         if (!p.lat || !p.lng) return Infinity
         const R = 6371
@@ -134,6 +148,8 @@ export default function CityView({ cityStop, view }) {
 
   function handleSortChange(mode) {
     setSortMode(mode)
+    setSortBorough(null)
+    setSortArea(null)
     if (mode === 'distance' && !userLocation) {
       setLocationError(null)
       navigator.geolocation.getCurrentPosition(
@@ -150,9 +166,13 @@ export default function CityView({ cityStop, view }) {
   const visibleAreaOptions = areaOptionsInBorough.filter((a) => !hiddenAreas.includes(a))
   const displayedAreaOptions = showHiddenAreas ? areaOptionsInBorough : visibleAreaOptions
   const areaFiltered = selectedArea ? allPlaces.filter((p) => p.area === selectedArea) : []
+  const areaTagOptions = [...new Set(areaFiltered.flatMap((p) => p.tags || []))].sort()
+  const areaFilteredByTag = areaTagFilter ? areaFiltered.filter((p) => p.tags?.includes(areaTagFilter)) : areaFiltered
 
   function handleAreaClick(label) {
     setSelectedArea((prev) => (prev === label ? null : label))
+    setAreaTagFilter(null)
+    setAreaTagPickerOpen(true)
   }
 
   async function handleToggleHideArea(areaName) {
@@ -291,6 +311,13 @@ export default function CityView({ cityStop, view }) {
     if (deleteError) setError(deleteError.message)
   }
 
+  async function handleRemoveFromItinerary(item) {
+    const patch = { in_itinerary: false, scheduled_date: null, scheduled_time: null }
+    setAllPlaces((prev) => prev.map((p) => (p.id === item.id ? { ...p, ...patch } : p)))
+    const { error: updateError } = await supabase.from('places').update(patch).eq('id', item.id)
+    if (updateError) setError(updateError.message)
+  }
+
   async function handleAddToItinerary(item) {
     setAllPlaces((prev) => prev.map((p) => (p.id === item.id ? { ...p, in_itinerary: true } : p)))
     const { error: updateError } = await supabase.from('places').update({ in_itinerary: true }).eq('id', item.id)
@@ -390,7 +417,7 @@ export default function CityView({ cityStop, view }) {
                   showReorder
                   onMoveUp={idx > 0 ? () => handleMoveOther(item, 'up') : null}
                   onMoveDown={idx < otherItems.length - 1 ? () => handleMoveOther(item, 'down') : null}
-                  onRemove={handleRemove}
+                  onRemove={handleRemoveFromItinerary}
                   onSchedule={handleSchedule}
                   onUpdate={handleUpdatePlace}
                 />
@@ -406,7 +433,7 @@ export default function CityView({ cityStop, view }) {
                 </p>
               )}
               {itineraryByDate[selectedDay]?.map((item) => (
-                <PlaceRow key={item.id} item={item} tagLookup={tagLookup} mode="scheduled" showReorder={false} onRemove={handleRemove} onUnschedule={handleUnschedule} onUpdate={handleUpdatePlace} />
+                <PlaceRow key={item.id} item={item} tagLookup={tagLookup} mode="scheduled" showReorder={false} onRemove={handleRemoveFromItinerary} onUnschedule={handleUnschedule} onUpdate={handleUpdatePlace} />
               ))}
             </>
           )}
@@ -488,10 +515,58 @@ export default function CityView({ cityStop, view }) {
               {loading && <p className="py-6 text-center font-mono text-xs text-ink/40">Loading…</p>}
               {!loading && !selectedBorough && <p className="py-6 text-center font-body text-sm text-ink/40">Select a borough above.</p>}
               {!loading && selectedBorough && !selectedArea && <p className="py-6 text-center font-body text-sm text-ink/40">Select an area above.</p>}
-              {!loading && selectedArea && areaFiltered.length === 0 && <p className="py-6 text-center font-body text-sm text-ink/40">Nothing saved here yet.</p>}
+
+              {selectedArea && areaTagOptions.length > 0 && (
+                (!areaTagFilter || areaTagPickerOpen) ? (
+                  <div className="mb-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAreaTagFilter(null)
+                        setAreaTagPickerOpen(false)
+                      }}
+                      className={`rounded-full border px-3 py-1.5 font-body text-sm transition-colors ${
+                        !areaTagFilter ? 'border-teal bg-teal text-paper' : 'border-line bg-card text-ink/60 hover:border-teal hover:text-ink'
+                      }`}
+                    >
+                      ⭐ All
+                    </button>
+                    {areaTagOptions.map((label) => (
+                      <button
+                        key={label}
+                        type="button"
+                        onClick={() => {
+                          setAreaTagFilter(label)
+                          setAreaTagPickerOpen(false)
+                        }}
+                        className="flex items-center gap-1.5 rounded-full border border-line bg-card px-3 py-1.5 font-body text-sm text-ink/60 hover:border-teal hover:text-ink"
+                      >
+                        <span aria-hidden="true">{tagLookup[label] ?? '🏷️'}</span>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mb-3 flex items-center gap-2">
+                    <span className="flex items-center gap-1.5 rounded-full border border-teal bg-teal px-3 py-1.5 font-body text-sm text-paper">
+                      <span aria-hidden="true">{tagLookup[areaTagFilter] ?? '🏷️'}</span>
+                      {areaTagFilter}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setAreaTagPickerOpen(true)}
+                      className="font-mono text-[10px] uppercase tracking-wide text-ink/40 underline decoration-dotted underline-offset-2 hover:text-ink"
+                    >
+                      change
+                    </button>
+                  </div>
+                )
+              )}
+
+              {!loading && selectedArea && areaFilteredByTag.length === 0 && <p className="py-6 text-center font-body text-sm text-ink/40">Nothing saved here yet.</p>}
               {!loading &&
                 selectedArea &&
-                areaFiltered.map((item) => (
+                areaFilteredByTag.map((item) => (
                   <PlaceRow key={item.id} item={item} tagLookup={tagLookup} mode="reference" showReorder={false} onRemove={handleRemove} onAddToItinerary={handleAddToItinerary} onUpdate={handleUpdatePlace} />
                 ))}
             </>
@@ -501,6 +576,15 @@ export default function CityView({ cityStop, view }) {
 
       {view === 'places' && (
         <>
+          <button
+            type="button"
+            onClick={() => setAddFormOpen((o) => !o)}
+            className="mb-3 rounded-full border border-dashed border-line px-3 py-1.5 font-mono text-xs uppercase tracking-wide text-ink/50 hover:border-teal hover:text-ink"
+          >
+            {addFormOpen ? '− Hide add-place form' : '+ Add a place'}
+          </button>
+
+          {addFormOpen && (
           <form onSubmit={handleAdd} className="mb-6 rounded-lg border border-line bg-card p-3">
             <div className="flex gap-2">
               <input
@@ -560,12 +644,17 @@ export default function CityView({ cityStop, view }) {
               </div>
             )}
           </form>
+          )}
 
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-wrap gap-2">
+          {(!tagFilter || tagPickerOpen) ? (
+            <div className="mb-3 flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={() => setTagFilter((prev) => (prev === '__all__' ? null : '__all__'))}
+                onClick={() => {
+                  const next = tagFilter === '__all__' ? null : '__all__'
+                  setTagFilter(next)
+                  setTagPickerOpen(next === null)
+                }}
                 className={`rounded-full border px-3 py-1.5 font-body text-sm transition-colors ${
                   tagFilter === '__all__' ? 'border-teal bg-teal text-paper' : 'border-line bg-card text-ink/60 hover:border-teal hover:text-ink'
                 }`}
@@ -578,7 +667,11 @@ export default function CityView({ cityStop, view }) {
                   <button
                     key={opt.id}
                     type="button"
-                    onClick={() => setTagFilter((prev) => (prev === opt.label ? null : opt.label))}
+                    onClick={() => {
+                      const next = tagFilter === opt.label ? null : opt.label
+                      setTagFilter(next)
+                      setTagPickerOpen(next === null)
+                    }}
                     className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 font-body text-sm transition-colors ${
                       isActive ? 'border-teal bg-teal text-paper' : 'border-line bg-card text-ink/60 hover:border-teal hover:text-ink'
                     }`}
@@ -589,22 +682,89 @@ export default function CityView({ cityStop, view }) {
                 )
               })}
             </div>
-          </div>
+          ) : (
+            <div className="mb-3 flex items-center gap-2">
+              <span className="rounded-full border border-teal bg-teal px-3 py-1.5 font-body text-sm text-paper">
+                {tagFilter === '__all__' ? '⭐ All' : `${tagLookup[tagFilter] ?? ''} ${tagFilter}`}
+              </span>
+              <button
+                type="button"
+                onClick={() => setTagPickerOpen(true)}
+                className="font-mono text-[10px] uppercase tracking-wide text-ink/40 underline decoration-dotted underline-offset-2 hover:text-ink"
+              >
+                change category
+              </button>
+            </div>
+          )}
 
           {tagFilter && (
-            <div className="mb-3 flex items-center gap-2">
-              <span className="font-mono text-[10px] uppercase tracking-wide text-ink/40">Sort:</span>
-              <select
-                value={sortMode}
-                onChange={(e) => handleSortChange(e.target.value)}
-                className="rounded-md border border-line bg-card px-2 py-1 font-mono text-xs text-ink focus:border-teal focus:outline-none"
-              >
-                <option value="title">Alphabetical</option>
-                <option value="area">Area (A–Z)</option>
-                <option value="borough">Borough</option>
-                <option value="distance">Closest to me</option>
-              </select>
-              {locationError && <span className="font-mono text-[10px] text-stamp">{locationError}</span>}
+            <div className="mb-3">
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-[10px] uppercase tracking-wide text-ink/40">Sort:</span>
+                <select
+                  value={sortMode}
+                  onChange={(e) => handleSortChange(e.target.value)}
+                  className="rounded-md border border-line bg-card px-2 py-1 font-mono text-xs text-ink focus:border-teal focus:outline-none"
+                >
+                  <option value="title">Alphabetical</option>
+                  <option value="borough">By borough</option>
+                  <option value="area">By area</option>
+                  <option value="distance">Closest to me</option>
+                </select>
+                {locationError && <span className="font-mono text-[10px] text-stamp">{locationError}</span>}
+              </div>
+
+              {sortMode === 'borough' && (
+                <div className="mt-2">
+                  {!sortBorough ? (
+                    <div className="flex flex-wrap gap-2">
+                      {sortBoroughOptions.map((b) => (
+                        <button
+                          key={b}
+                          type="button"
+                          onClick={() => setSortBorough(b)}
+                          className="rounded-full border border-line bg-card px-3 py-1.5 font-body text-sm text-ink/60 hover:border-teal hover:text-ink"
+                        >
+                          {b}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <span className="rounded-full border border-teal bg-teal px-3 py-1.5 font-body text-sm text-paper">{sortBorough}</span>
+                      <button type="button" onClick={() => setSortBorough(null)} className="font-mono text-[10px] uppercase tracking-wide text-ink/40 underline decoration-dotted underline-offset-2 hover:text-ink">
+                        change borough
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {sortMode === 'area' && (
+                <div className="mt-2">
+                  {!sortArea ? (
+                    <div className="flex flex-wrap gap-2">
+                      {sortAreaOptions.map((a) => (
+                        <button
+                          key={a}
+                          type="button"
+                          onClick={() => setSortArea(a)}
+                          className="rounded-full border border-line bg-card px-3 py-1.5 font-mono text-xs uppercase tracking-wide text-ink/60 hover:border-teal hover:text-ink"
+                        >
+                          📍 {a}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <span className="rounded-full border border-teal bg-teal px-3 py-1.5 font-mono text-xs uppercase tracking-wide text-paper">📍 {sortArea}</span>
+                      <button type="button" onClick={() => setSortArea(null)} className="font-mono text-[10px] uppercase tracking-wide text-ink/40 underline decoration-dotted underline-offset-2 hover:text-ink">
+                        change area
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

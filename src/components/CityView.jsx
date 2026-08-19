@@ -1,24 +1,49 @@
 import { useEffect, useRef, useState } from 'react'
+import { formatInTimeZone, toZonedTime } from 'date-fns-tz'
 import { supabase } from '../lib/supabaseClient'
 import TagPicker from './TagPicker'
 import PlaceRow from './PlaceRow'
+
+function getDayList(cityStop) {
+  const tz = cityStop.timezone || 'America/New_York'
+  const startLocal = toZonedTime(cityStop.start_at, tz)
+  const endLocal = toZonedTime(cityStop.end_at, tz)
+  const days = []
+  const cursor = new Date(startLocal.getFullYear(), startLocal.getMonth(), startLocal.getDate())
+  const endDate = new Date(endLocal.getFullYear(), endLocal.getMonth(), endLocal.getDate())
+  while (cursor <= endDate) {
+    const y = cursor.getFullYear()
+    const m = String(cursor.getMonth() + 1).padStart(2, '0')
+    const d = String(cursor.getDate()).padStart(2, '0')
+    days.push({
+      dateStr: `${y}-${m}-${d}`,
+      label: cursor.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' }),
+    })
+    cursor.setDate(cursor.getDate() + 1)
+  }
+  return days
+}
 
 function formatDateHeader(dateStr) {
   const d = new Date(`${dateStr}T00:00:00`)
   return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
 }
 
-export default function CityView({ cityStop }) {
+export default function CityView({ cityStop, view }) {
   const [tags, setTags] = useState([])
   const [allPlaces, setAllPlaces] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
-  const [view, setView] = useState('itinerary') // 'itinerary' | 'ideas'
-  const [tagFilter, setTagFilter] = useState(null) // tag label | 'Done' | null
+  const [tagFilter, setTagFilter] = useState(null)
   const [areaFilter, setAreaFilter] = useState(null)
   const [hiddenAreas, setHiddenAreas] = useState([])
   const [showHiddenAreas, setShowHiddenAreas] = useState(false)
+
+  const dayList = getDayList(cityStop)
+  const todayStr = formatInTimeZone(new Date(), cityStop.timezone || 'America/New_York', 'yyyy-MM-dd')
+  const defaultDay = dayList.find((d) => d.dateStr === todayStr)?.dateStr || dayList[0]?.dateStr || null
+  const [selectedDay, setSelectedDay] = useState(defaultDay)
 
   const [title, setTitle] = useState('')
   const [area, setArea] = useState('')
@@ -36,18 +61,9 @@ export default function CityView({ cityStop }) {
   useEffect(() => {
     loadPlaces()
     loadHiddenAreas()
+    setSelectedDay(defaultDay)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cityStop?.id])
-
-  async function loadHiddenAreas() {
-    if (!cityStop) return
-    const { data, error: hiddenError } = await supabase
-      .from('hidden_areas')
-      .select('area')
-      .eq('city_stop_id', cityStop.id)
-    if (hiddenError) setError(hiddenError.message)
-    else setHiddenAreas((data ?? []).map((r) => r.area))
-    setShowHiddenAreas(false)
-  }
 
   async function loadTags() {
     const { data, error: tagError } = await supabase
@@ -74,31 +90,42 @@ export default function CityView({ cityStop }) {
     setLoading(false)
   }
 
+  async function loadHiddenAreas() {
+    if (!cityStop) return
+    const { data, error: hiddenError } = await supabase
+      .from('hidden_areas')
+      .select('area')
+      .eq('city_stop_id', cityStop.id)
+    if (hiddenError) setError(hiddenError.message)
+    else setHiddenAreas((data ?? []).map((r) => r.area))
+    setShowHiddenAreas(false)
+  }
+
   const tagLookup = Object.fromEntries(tags.map((t) => [t.label, t.icon]))
   const areaOptions = [...new Set(allPlaces.map((p) => p.area).filter(Boolean))].sort()
   const visibleAreaOptions = areaOptions.filter((a) => !hiddenAreas.includes(a))
   const displayedAreaOptions = showHiddenAreas ? areaOptions : visibleAreaOptions
 
-  const isDoneView = tagFilter === 'Done'
-  const filtered = allPlaces.filter((p) => {
-    const statusOk = isDoneView ? p.status === 'done' : p.status === 'active'
-    if (!statusOk) return false
-    if (tagFilter && !isDoneView && !p.tags?.includes(tagFilter)) return false
-    if (areaFilter && p.area !== areaFilter) return false
-    return true
-  })
-
-  const ideaItems = filtered.filter((p) => !p.scheduled_date)
-  const itineraryItems = filtered.filter((p) => p.scheduled_date)
+  const activePlaces = allPlaces.filter((p) => p.status === 'active')
+  const ideaItems = activePlaces.filter((p) => !p.scheduled_date)
   const itineraryByDate = {}
-  for (const item of itineraryItems) {
+  for (const item of activePlaces.filter((p) => p.scheduled_date)) {
     if (!itineraryByDate[item.scheduled_date]) itineraryByDate[item.scheduled_date] = []
     itineraryByDate[item.scheduled_date].push(item)
   }
   for (const date in itineraryByDate) {
     itineraryByDate[date].sort((a, b) => (a.scheduled_time || '99:99').localeCompare(b.scheduled_time || '99:99'))
   }
-  const sortedDates = Object.keys(itineraryByDate).sort()
+
+  const isDoneTagView = tagFilter === 'Done'
+  const placesFiltered = allPlaces.filter((p) => {
+    const statusOk = isDoneTagView ? p.status === 'done' : p.status === 'active'
+    if (!statusOk) return false
+    if (tagFilter && !isDoneTagView && !p.tags?.includes(tagFilter)) return false
+    return true
+  })
+
+  const areaFiltered = areaFilter ? activePlaces.filter((p) => p.area === areaFilter) : []
 
   function handleFilterClick(label) {
     setTagFilter((prev) => (prev === label ? null : label))
@@ -108,23 +135,22 @@ export default function CityView({ cityStop }) {
     setAreaFilter((prev) => (prev === label ? null : label))
   }
 
-  async function handleToggleHideArea(area) {
-    const isHidden = hiddenAreas.includes(area)
-
+  async function handleToggleHideArea(areaName) {
+    const isHidden = hiddenAreas.includes(areaName)
     if (isHidden) {
-      setHiddenAreas((prev) => prev.filter((a) => a !== area))
+      setHiddenAreas((prev) => prev.filter((a) => a !== areaName))
       const { error: deleteError } = await supabase
         .from('hidden_areas')
         .delete()
         .eq('city_stop_id', cityStop.id)
-        .eq('area', area)
+        .eq('area', areaName)
       if (deleteError) setError(deleteError.message)
     } else {
-      setHiddenAreas((prev) => [...prev, area])
-      if (areaFilter === area) setAreaFilter(null)
+      setHiddenAreas((prev) => [...prev, areaName])
+      if (areaFilter === areaName) setAreaFilter(null)
       const { error: insertError } = await supabase
         .from('hidden_areas')
-        .insert({ city_stop_id: cityStop.id, area })
+        .insert({ city_stop_id: cityStop.id, area: areaName })
       if (insertError) setError(insertError.message)
     }
   }
@@ -154,13 +180,11 @@ export default function CityView({ cityStop }) {
       setError(updateError.message)
       return
     }
-
     if (labelChanged) {
       const { data: affected, error: fetchError } = await supabase
         .from('places')
         .select('id, tags')
         .contains('tags', [tag.label])
-
       if (fetchError) {
         setError(fetchError.message)
       } else if (affected?.length) {
@@ -174,7 +198,6 @@ export default function CityView({ cityStop }) {
       setFormTags((prev) => prev.map((l) => (l === tag.label ? newLabel : l)))
       setTagFilter((prev) => (prev === tag.label ? newLabel : prev))
     }
-
     await loadTags()
     await loadPlaces()
   }
@@ -184,7 +207,6 @@ export default function CityView({ cityStop }) {
       `Delete "${tag.label}"? Places already tagged with it keep the label but lose the icon match.`
     )
     if (!confirmed) return
-
     const { error: deleteError } = await supabase.from('tags').delete().eq('id', tag.id)
     if (deleteError) {
       setError(deleteError.message)
@@ -200,12 +222,10 @@ export default function CityView({ cityStop }) {
     const swapIndex = direction === 'up' ? index - 1 : index + 1
     if (swapIndex < 0 || swapIndex >= tags.length) return
     const other = tags[swapIndex]
-
     const reordered = [...tags]
     reordered[index] = other
     reordered[swapIndex] = tag
     setTags(reordered)
-
     const [{ error: e1 }, { error: e2 }] = await Promise.all([
       supabase.from('tags').update({ sort_order: other.sort_order }).eq('id', tag.id),
       supabase.from('tags').update({ sort_order: tag.sort_order }).eq('id', other.id),
@@ -237,10 +257,8 @@ export default function CityView({ cityStop }) {
     e.preventDefault()
     const trimmedTitle = title.trim()
     if (!trimmedTitle || submitting || !cityStop) return
-
     setSubmitting(true)
     const nextOrder = allPlaces.length > 0 ? Math.max(...allPlaces.map((p) => p.sort_order ?? 0)) + 1 : 0
-
     const { data, error: insertError } = await supabase
       .from('places')
       .insert({
@@ -253,7 +271,6 @@ export default function CityView({ cityStop }) {
       })
       .select()
       .single()
-
     if (insertError) {
       setError(insertError.message)
     } else if (data) {
@@ -271,7 +288,6 @@ export default function CityView({ cityStop }) {
     const nextStatus = item.status === 'done' ? 'active' : 'done'
     const completed_at = nextStatus === 'done' ? new Date().toISOString() : null
     setAllPlaces((prev) => prev.map((p) => (p.id === item.id ? { ...p, status: nextStatus, completed_at } : p)))
-
     const { error: updateError } = await supabase
       .from('places')
       .update({ status: nextStatus, completed_at })
@@ -294,7 +310,7 @@ export default function CityView({ cityStop }) {
       .update({ scheduled_date: date, scheduled_time: time })
       .eq('id', item.id)
     if (updateError) setError(updateError.message)
-    else setView('itinerary')
+    else setSelectedDay(date)
   }
 
   async function handleUnschedule(item) {
@@ -306,14 +322,14 @@ export default function CityView({ cityStop }) {
       .update({ scheduled_date: null, scheduled_time: null })
       .eq('id', item.id)
     if (updateError) setError(updateError.message)
+    else setSelectedDay('ideas')
   }
 
-  async function handleMove(item, direction) {
+  async function handleMoveIdea(item, direction) {
     const index = ideaItems.findIndex((i) => i.id === item.id)
     const swapIndex = direction === 'up' ? index - 1 : index + 1
     if (swapIndex < 0 || swapIndex >= ideaItems.length) return
     const other = ideaItems[swapIndex]
-
     setAllPlaces((prev) =>
       prev.map((p) => {
         if (p.id === item.id) return { ...p, sort_order: other.sort_order }
@@ -321,7 +337,6 @@ export default function CityView({ cityStop }) {
         return p
       })
     )
-
     const [{ error: e1 }, { error: e2 }] = await Promise.all([
       supabase.from('places').update({ sort_order: other.sort_order }).eq('id', item.id),
       supabase.from('places').update({ sort_order: item.sort_order }).eq('id', other.id),
@@ -420,131 +435,76 @@ export default function CityView({ cityStop }) {
         )}
       </form>
 
-      <div className="mb-3 flex w-fit gap-1 rounded-full bg-line/40 p-1">
-        {[
-          { key: 'itinerary', label: 'Itinerary' },
-          { key: 'ideas', label: 'Ideas' },
-        ].map((v) => (
-          <button
-            key={v.key}
-            onClick={() => setView(v.key)}
-            className={`rounded-full px-3 py-1 font-mono text-xs uppercase tracking-wide transition-colors ${
-              view === v.key ? 'bg-card text-ink shadow-sm' : 'text-ink/50 hover:text-ink'
-            }`}
-          >
-            {v.label}
-          </button>
-        ))}
-      </div>
+      {error && <p className="mb-3 font-mono text-xs text-stamp">{error}</p>}
 
-      <div className="mb-2 flex flex-wrap gap-2">
-        {tagFilterOptions.map((opt) => {
-          const isActive = tagFilter === opt.label
-          return (
+      {view === 'itinerary' && (
+        <>
+          <div className="mb-4 flex flex-wrap gap-2">
+            {dayList.map((d) => (
+              <button
+                key={d.dateStr}
+                type="button"
+                onClick={() => setSelectedDay(d.dateStr)}
+                className={`rounded-full border px-3 py-1.5 font-mono text-xs uppercase tracking-wide transition-colors ${
+                  selectedDay === d.dateStr
+                    ? 'border-teal bg-teal text-paper'
+                    : 'border-line bg-card text-ink/60 hover:border-teal hover:text-ink'
+                }`}
+              >
+                {d.label}
+              </button>
+            ))}
             <button
-              key={opt.id}
               type="button"
-              onClick={() => handleFilterClick(opt.label)}
-              className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 font-body text-sm transition-colors ${
-                isActive
-                  ? 'border-teal bg-teal text-paper'
-                  : 'border-line bg-card text-ink/60 hover:border-teal hover:text-ink'
+              onClick={() => setSelectedDay('ideas')}
+              className={`rounded-full border px-3 py-1.5 font-mono text-xs uppercase tracking-wide transition-colors ${
+                selectedDay === 'ideas'
+                  ? 'border-gold bg-gold text-paper'
+                  : 'border-line bg-card text-ink/60 hover:border-gold hover:text-ink'
               }`}
             >
-              <span aria-hidden="true">{opt.icon}</span>
-              {opt.label}
+              💭 Ideas
             </button>
-          )
-        })}
-      </div>
-
-      {areaOptions.length > 0 && (
-        <div className="mb-4">
-          <div className="flex flex-wrap gap-2">
-            {displayedAreaOptions.map((a) => {
-              const isActive = areaFilter === a
-              const isHidden = hiddenAreas.includes(a)
-              return (
-                <div key={a} className="group relative">
-                  <button
-                    type="button"
-                    onClick={() => handleAreaClick(a)}
-                    className={`rounded-full border px-3 py-1.5 font-mono text-xs uppercase tracking-wide transition-colors ${
-                      isHidden
-                        ? 'border-dashed border-line/70 bg-transparent text-ink/30'
-                        : isActive
-                        ? 'border-gold bg-gold text-paper'
-                        : 'border-line bg-card text-ink/50 hover:border-gold hover:text-ink'
-                    }`}
-                  >
-                    📍 {a}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      handleToggleHideArea(a)
-                    }}
-                    aria-label={isHidden ? `Unhide ${a}` : `Hide ${a}`}
-                    className="absolute -right-1.5 -top-1.5 hidden h-4 w-4 items-center justify-center rounded-full bg-ink text-[8px] text-paper group-hover:flex"
-                  >
-                    {isHidden ? '+' : '✕'}
-                  </button>
-                </div>
-              )
-            })}
           </div>
-          {hiddenAreas.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setShowHiddenAreas((s) => !s)}
-              className="mt-2 font-mono text-[10px] uppercase tracking-wide text-ink/40 underline decoration-dotted underline-offset-2 hover:text-ink"
-            >
-              {showHiddenAreas ? 'Hide hidden areas again' : `Show hidden areas (${hiddenAreas.length})`}
-            </button>
-          )}
-        </div>
-      )}
 
-      <div className="rounded-lg border border-line bg-card px-4">
-        {loading && <p className="py-6 text-center font-mono text-xs text-ink/40">Loading…</p>}
-        {error && <p className="py-4 font-mono text-xs text-stamp">{error}</p>}
+          <div className="rounded-lg border border-line bg-card px-4">
+            {loading && <p className="py-6 text-center font-mono text-xs text-ink/40">Loading…</p>}
 
-        {!loading && !error && view === 'ideas' && (
-          <>
-            {ideaItems.length === 0 && (
-              <p className="py-6 text-center font-body text-sm text-ink/40">
-                {isDoneView ? 'Nothing marked done yet.' : 'Nothing here yet. Add a place above.'}
-              </p>
+            {!loading && selectedDay === 'ideas' && (
+              <>
+                {ideaItems.length === 0 && (
+                  <p className="py-6 text-center font-body text-sm text-ink/40">
+                    Nothing here yet. Add a place above, or "Move back to ideas" from a scheduled one.
+                  </p>
+                )}
+                {ideaItems.map((item, idx) => (
+                  <PlaceRow
+                    key={item.id}
+                    item={item}
+                    tagLookup={tagLookup}
+                    showReorder
+                    onMoveUp={idx > 0 ? () => handleMoveIdea(item, 'up') : null}
+                    onMoveDown={idx < ideaItems.length - 1 ? () => handleMoveIdea(item, 'down') : null}
+                    onToggle={handleToggle}
+                    onRemove={handleRemove}
+                    onSchedule={handleSchedule}
+                    onUnschedule={handleUnschedule}
+                  />
+                ))}
+              </>
             )}
-            {ideaItems.map((item, idx) => (
-              <PlaceRow
-                key={item.id}
-                item={item}
-                tagLookup={tagLookup}
-                showReorder={!isDoneView}
-                onMoveUp={!isDoneView && idx > 0 ? () => handleMove(item, 'up') : null}
-                onMoveDown={!isDoneView && idx < ideaItems.length - 1 ? () => handleMove(item, 'down') : null}
-                onToggle={handleToggle}
-                onRemove={handleRemove}
-                onSchedule={handleSchedule}
-                onUnschedule={handleUnschedule}
-              />
-            ))}
-          </>
-        )}
 
-        {!loading && !error && view === 'itinerary' && (
-          <>
-            {sortedDates.length === 0 && (
-              <p className="py-6 text-center font-body text-sm text-ink/40">
-                {isDoneView ? 'Nothing marked done yet.' : 'Nothing scheduled yet — schedule an idea to see it here.'}
-              </p>
-            )}
-            {sortedDates.map((date) => (
-              <div key={date} className="border-b border-line py-2 last:border-b-0">
-                <p className="px-1 py-2 font-display text-sm font-semibold text-teal">{formatDateHeader(date)}</p>
-                {itineraryByDate[date].map((item) => (
+            {!loading && selectedDay !== 'ideas' && selectedDay && (
+              <>
+                <p className="px-1 py-2 font-display text-sm font-semibold text-teal">
+                  {formatDateHeader(selectedDay)}
+                </p>
+                {(!itineraryByDate[selectedDay] || itineraryByDate[selectedDay].length === 0) && (
+                  <p className="py-6 text-center font-body text-sm text-ink/40">
+                    Nothing scheduled yet — schedule an idea to see it here.
+                  </p>
+                )}
+                {itineraryByDate[selectedDay]?.map((item) => (
                   <PlaceRow
                     key={item.id}
                     item={item}
@@ -556,11 +516,142 @@ export default function CityView({ cityStop }) {
                     onUnschedule={handleUnschedule}
                   />
                 ))}
+              </>
+            )}
+          </div>
+        </>
+      )}
+
+      {view === 'areas' && (
+        <>
+          {areaOptions.length === 0 ? (
+            <p className="py-6 text-center font-body text-sm text-ink/40">
+              No areas yet — add an area to a place to see it here.
+            </p>
+          ) : (
+            <>
+              <div className="mb-2 flex flex-wrap gap-2">
+                {displayedAreaOptions.map((a) => {
+                  const isActive = areaFilter === a
+                  const isHidden = hiddenAreas.includes(a)
+                  return (
+                    <div key={a} className="group relative">
+                      <button
+                        type="button"
+                        onClick={() => handleAreaClick(a)}
+                        className={`rounded-full border px-3 py-1.5 font-mono text-xs uppercase tracking-wide transition-colors ${
+                          isHidden
+                            ? 'border-dashed border-line/70 bg-transparent text-ink/30'
+                            : isActive
+                            ? 'border-gold bg-gold text-paper'
+                            : 'border-line bg-card text-ink/50 hover:border-gold hover:text-ink'
+                        }`}
+                      >
+                        📍 {a}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleToggleHideArea(a)
+                        }}
+                        aria-label={isHidden ? `Unhide ${a}` : `Hide ${a}`}
+                        className="absolute -right-1.5 -top-1.5 hidden h-4 w-4 items-center justify-center rounded-full bg-ink text-[8px] text-paper group-hover:flex"
+                      >
+                        {isHidden ? '+' : '✕'}
+                      </button>
+                    </div>
+                  )
+                })}
               </div>
-            ))}
-          </>
-        )}
-      </div>
+              {hiddenAreas.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowHiddenAreas((s) => !s)}
+                  className="mb-4 block font-mono text-[10px] uppercase tracking-wide text-ink/40 underline decoration-dotted underline-offset-2 hover:text-ink"
+                >
+                  {showHiddenAreas ? 'Hide hidden areas again' : `Show hidden areas (${hiddenAreas.length})`}
+                </button>
+              )}
+
+              <div className="rounded-lg border border-line bg-card px-4">
+                {loading && <p className="py-6 text-center font-mono text-xs text-ink/40">Loading…</p>}
+                {!loading && !areaFilter && (
+                  <p className="py-6 text-center font-body text-sm text-ink/40">Select an area above.</p>
+                )}
+                {!loading && areaFilter && areaFiltered.length === 0 && (
+                  <p className="py-6 text-center font-body text-sm text-ink/40">Nothing saved here yet.</p>
+                )}
+                {!loading &&
+                  areaFilter &&
+                  areaFiltered.map((item) => (
+                    <PlaceRow
+                      key={item.id}
+                      item={item}
+                      tagLookup={tagLookup}
+                      showReorder={false}
+                      onToggle={handleToggle}
+                      onRemove={handleRemove}
+                      onSchedule={handleSchedule}
+                      onUnschedule={handleUnschedule}
+                    />
+                  ))}
+              </div>
+            </>
+          )}
+        </>
+      )}
+
+      {view === 'places' && (
+        <>
+          <div className="mb-4 flex flex-wrap gap-2">
+            {tagFilterOptions.map((opt) => {
+              const isActive = tagFilter === opt.label
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => handleFilterClick(opt.label)}
+                  className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 font-body text-sm transition-colors ${
+                    isActive
+                      ? 'border-teal bg-teal text-paper'
+                      : 'border-line bg-card text-ink/60 hover:border-teal hover:text-ink'
+                  }`}
+                >
+                  <span aria-hidden="true">{opt.icon}</span>
+                  {opt.label}
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="rounded-lg border border-line bg-card px-4">
+            {loading && <p className="py-6 text-center font-mono text-xs text-ink/40">Loading…</p>}
+            {!loading && !tagFilter && (
+              <p className="py-6 text-center font-body text-sm text-ink/40">Select a category above.</p>
+            )}
+            {!loading && tagFilter && placesFiltered.length === 0 && (
+              <p className="py-6 text-center font-body text-sm text-ink/40">
+                {isDoneTagView ? 'Nothing marked done yet.' : 'Nothing here yet.'}
+              </p>
+            )}
+            {!loading &&
+              tagFilter &&
+              placesFiltered.map((item) => (
+                <PlaceRow
+                  key={item.id}
+                  item={item}
+                  tagLookup={tagLookup}
+                  showReorder={false}
+                  onToggle={handleToggle}
+                  onRemove={handleRemove}
+                  onSchedule={handleSchedule}
+                  onUnschedule={handleUnschedule}
+                />
+              ))}
+          </div>
+        </>
+      )}
     </div>
   )
 }

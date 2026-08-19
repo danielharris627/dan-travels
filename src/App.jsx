@@ -6,14 +6,21 @@ import TripPicker from './components/TripPicker'
 import ResourcesView from './components/ResourcesView'
 import AppIdeasView from './components/AppIdeasView'
 
+const SECTIONS = [
+  { key: 'itinerary', label: 'Itinerary' },
+  { key: 'areas', label: 'Areas' },
+  { key: 'places', label: 'Places' },
+  { key: 'resources', label: 'Resources' },
+]
+
 export default function App() {
   const [trips, setTrips] = useState([])
   const [loading, setLoading] = useState(true)
   const [manualCityStopId, setManualCityStopId] = useState(null)
   const [showPicker, setShowPicker] = useState(false)
   const [showSetup, setShowSetup] = useState(false)
-  const [showResources, setShowResources] = useState(false)
   const [showAppIdeas, setShowAppIdeas] = useState(false)
+  const [section, setSection] = useState('itinerary')
 
   useEffect(() => {
     loadTrips()
@@ -77,26 +84,6 @@ export default function App() {
           </div>
           <div className="flex flex-shrink-0 items-center gap-2">
             <button
-              onClick={() => setShowAppIdeas((a) => !a)}
-              aria-label="App ideas"
-              title="App ideas"
-              className={`flex h-7 w-7 items-center justify-center rounded-full border text-xs transition-colors ${
-                showAppIdeas ? 'border-teal bg-teal text-paper' : 'border-line text-ink/40 hover:border-teal hover:text-ink'
-              }`}
-            >
-              💡
-            </button>
-            <button
-              onClick={() => setShowResources((r) => !r)}
-              className={`rounded-full border px-3 py-1.5 font-mono text-xs uppercase tracking-wide transition-colors ${
-                showResources
-                  ? 'border-teal bg-teal text-paper'
-                  : 'border-line text-ink/60 hover:border-teal hover:text-ink'
-              }`}
-            >
-              Resources
-            </button>
-            <button
               onClick={() => setShowPicker((p) => !p)}
               className="rounded-full border border-line px-3 py-1.5 font-mono text-xs uppercase tracking-wide text-ink/60 hover:border-teal hover:text-ink"
             >
@@ -107,6 +94,16 @@ export default function App() {
               className="rounded-full border border-line px-3 py-1.5 font-mono text-xs uppercase tracking-wide text-ink/60 hover:border-teal hover:text-ink"
             >
               + Trip
+            </button>
+            <button
+              onClick={() => setShowAppIdeas((a) => !a)}
+              aria-label="App ideas"
+              title="App ideas"
+              className={`flex h-7 w-7 items-center justify-center rounded-full border text-xs transition-colors ${
+                showAppIdeas ? 'border-teal bg-teal text-paper' : 'border-line text-ink/40 hover:border-teal hover:text-ink'
+              }`}
+            >
+              💡
             </button>
           </div>
         </div>
@@ -127,19 +124,36 @@ export default function App() {
             onClose={() => setShowPicker(false)}
           />
         )}
+
+        {!showAppIdeas && (
+          <nav className="flex gap-6 border-b border-line">
+            {SECTIONS.map((s) => (
+              <button
+                key={s.key}
+                onClick={() => setSection(s.key)}
+                className={`relative pb-3 font-display text-lg transition-colors ${
+                  section === s.key ? 'text-ink' : 'text-ink/35 hover:text-ink/60'
+                }`}
+              >
+                {s.label}
+                {section === s.key && <span className="absolute -bottom-px left-0 h-[2px] w-full bg-stamp" />}
+              </button>
+            ))}
+          </nav>
+        )}
       </header>
 
-      <main className="mx-auto max-w-2xl px-6 pb-24">
+      <main className="mx-auto max-w-2xl px-6 pb-24 pt-8">
         {showAppIdeas ? (
           <AppIdeasView />
-        ) : showResources ? (
+        ) : section === 'resources' ? (
           activeCityStop ? (
             <ResourcesView tripId={activeCityStop.trip_id} />
           ) : (
             <p className="py-6 text-center font-body text-sm text-ink/40">No active trip to show resources for.</p>
           )
         ) : activeCityStop ? (
-          <CityView cityStop={activeCityStop} />
+          <CityView cityStop={activeCityStop} view={section} />
         ) : (
           <div className="rounded-lg border border-dashed border-line px-6 py-16 text-center">
             <p className="font-display text-lg text-ink/50">No active trip</p>

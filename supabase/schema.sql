@@ -42,9 +42,11 @@ create table if not exists places (
   city_stop_id uuid not null references city_stops(id) on delete cascade,
   title text not null,
   area text,
+  borough text,
   notes text,
   tags text[] default '{}',
-  status text not null default 'active', -- 'active' | 'done' (visited)
+  status text not null default 'active',
+  in_itinerary boolean not null default false,
   scheduled_date date,
   scheduled_time time,
   sort_order integer not null default 0,
@@ -53,6 +55,7 @@ create table if not exists places (
   lng double precision,
   maps_url text,
   google_place_id text,
+  source text,
   created_at timestamptz not null default now(),
   completed_at timestamptz
 );

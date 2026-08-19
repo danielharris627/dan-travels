@@ -16,10 +16,7 @@ function getDayList(cityStop) {
     const y = cursor.getFullYear()
     const m = String(cursor.getMonth() + 1).padStart(2, '0')
     const d = String(cursor.getDate()).padStart(2, '0')
-    days.push({
-      dateStr: `${y}-${m}-${d}`,
-      label: cursor.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' }),
-    })
+    days.push({ dateStr: `${y}-${m}-${d}`, label: cursor.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' }) })
     cursor.setDate(cursor.getDate() + 1)
   }
   return days
@@ -37,7 +34,8 @@ export default function CityView({ cityStop, view }) {
   const [error, setError] = useState(null)
 
   const [tagFilter, setTagFilter] = useState(null)
-  const [areaFilter, setAreaFilter] = useState(null)
+  const [selectedBorough, setSelectedBorough] = useState(null)
+  const [selectedArea, setSelectedArea] = useState(null)
   const [hiddenAreas, setHiddenAreas] = useState([])
   const [showHiddenAreas, setShowHiddenAreas] = useState(false)
 
@@ -63,15 +61,13 @@ export default function CityView({ cityStop, view }) {
     loadPlaces()
     loadHiddenAreas()
     setSelectedDay(defaultDay)
+    setSelectedBorough(null)
+    setSelectedArea(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cityStop?.id])
 
   async function loadTags() {
-    const { data, error: tagError } = await supabase
-      .from('tags')
-      .select('*')
-      .order('sort_order', { ascending: true })
-      .order('label', { ascending: true })
+    const { data, error: tagError } = await supabase.from('tags').select('*').order('sort_order', { ascending: true }).order('label', { ascending: true })
     if (tagError) setError(tagError.message)
     else setTags(data ?? [])
   }
@@ -80,12 +76,7 @@ export default function CityView({ cityStop, view }) {
     if (!cityStop) return
     setLoading(true)
     setError(null)
-    const { data, error: fetchError } = await supabase
-      .from('places')
-      .select('*')
-      .eq('city_stop_id', cityStop.id)
-      .order('sort_order', { ascending: true })
-
+    const { data, error: fetchError } = await supabase.from('places').select('*').eq('city_stop_id', cityStop.id).order('sort_order', { ascending: true })
     if (fetchError) setError(fetchError.message)
     else setAllPlaces(data ?? [])
     setLoading(false)
@@ -93,24 +84,17 @@ export default function CityView({ cityStop, view }) {
 
   async function loadHiddenAreas() {
     if (!cityStop) return
-    const { data, error: hiddenError } = await supabase
-      .from('hidden_areas')
-      .select('area')
-      .eq('city_stop_id', cityStop.id)
+    const { data, error: hiddenError } = await supabase.from('hidden_areas').select('area').eq('city_stop_id', cityStop.id)
     if (hiddenError) setError(hiddenError.message)
     else setHiddenAreas((data ?? []).map((r) => r.area))
     setShowHiddenAreas(false)
   }
 
   const tagLookup = Object.fromEntries(tags.map((t) => [t.label, t.icon]))
-  const areaOptions = [...new Set(allPlaces.map((p) => p.area).filter(Boolean))].sort()
-  const visibleAreaOptions = areaOptions.filter((a) => !hiddenAreas.includes(a))
-  const displayedAreaOptions = showHiddenAreas ? areaOptions : visibleAreaOptions
 
-  const activePlaces = allPlaces.filter((p) => p.status === 'active')
-  const ideaItems = activePlaces.filter((p) => !p.scheduled_date)
+  const otherItems = allPlaces.filter((p) => p.in_itinerary && !p.scheduled_date)
   const itineraryByDate = {}
-  for (const item of activePlaces.filter((p) => p.scheduled_date)) {
+  for (const item of allPlaces.filter((p) => p.scheduled_date)) {
     if (!itineraryByDate[item.scheduled_date]) itineraryByDate[item.scheduled_date] = []
     itineraryByDate[item.scheduled_date].push(item)
   }
@@ -118,51 +102,37 @@ export default function CityView({ cityStop, view }) {
     itineraryByDate[date].sort((a, b) => (a.scheduled_time || '99:99').localeCompare(b.scheduled_time || '99:99'))
   }
 
-  const isDoneTagView = tagFilter === 'Done'
-  const placesFiltered = allPlaces.filter((p) => {
-    const statusOk = isDoneTagView ? p.status === 'done' : p.status === 'active'
-    if (!statusOk) return false
-    if (tagFilter && !isDoneTagView && !p.tags?.includes(tagFilter)) return false
-    return true
-  })
+  const placesFiltered = tagFilter ? allPlaces.filter((p) => p.tags?.includes(tagFilter)) : []
 
-  const areaFiltered = areaFilter ? activePlaces.filter((p) => p.area === areaFilter) : []
-
-  function handleFilterClick(label) {
-    setTagFilter((prev) => (prev === label ? null : label))
-  }
+  const boroughOptions = [...new Set(allPlaces.map((p) => p.borough).filter(Boolean))].sort()
+  const areaOptionsInBorough = selectedBorough
+    ? [...new Set(allPlaces.filter((p) => p.borough === selectedBorough).map((p) => p.area).filter(Boolean))].sort()
+    : []
+  const visibleAreaOptions = areaOptionsInBorough.filter((a) => !hiddenAreas.includes(a))
+  const displayedAreaOptions = showHiddenAreas ? areaOptionsInBorough : visibleAreaOptions
+  const areaFiltered = selectedArea ? allPlaces.filter((p) => p.area === selectedArea) : []
 
   function handleAreaClick(label) {
-    setAreaFilter((prev) => (prev === label ? null : label))
+    setSelectedArea((prev) => (prev === label ? null : label))
   }
 
   async function handleToggleHideArea(areaName) {
     const isHidden = hiddenAreas.includes(areaName)
     if (isHidden) {
       setHiddenAreas((prev) => prev.filter((a) => a !== areaName))
-      const { error: deleteError } = await supabase
-        .from('hidden_areas')
-        .delete()
-        .eq('city_stop_id', cityStop.id)
-        .eq('area', areaName)
+      const { error: deleteError } = await supabase.from('hidden_areas').delete().eq('city_stop_id', cityStop.id).eq('area', areaName)
       if (deleteError) setError(deleteError.message)
     } else {
       setHiddenAreas((prev) => [...prev, areaName])
-      if (areaFilter === areaName) setAreaFilter(null)
-      const { error: insertError } = await supabase
-        .from('hidden_areas')
-        .insert({ city_stop_id: cityStop.id, area: areaName })
+      if (selectedArea === areaName) setSelectedArea(null)
+      const { error: insertError } = await supabase.from('hidden_areas').insert({ city_stop_id: cityStop.id, area: areaName })
       if (insertError) setError(insertError.message)
     }
   }
 
   async function handleCreateTag(label, icon) {
     const nextOrder = tags.length > 0 ? Math.max(...tags.map((t) => t.sort_order ?? 0)) + 1 : 0
-    const { data, error: insertError } = await supabase
-      .from('tags')
-      .insert({ label, icon, sort_order: nextOrder })
-      .select()
-      .single()
+    const { data, error: insertError } = await supabase.from('tags').insert({ label, icon, sort_order: nextOrder }).select().single()
     if (insertError) {
       setError(insertError.message)
       return
@@ -173,19 +143,13 @@ export default function CityView({ cityStop, view }) {
 
   async function handleUpdateTag(tag, newLabel, newIcon) {
     const labelChanged = newLabel !== tag.label
-    const { error: updateError } = await supabase
-      .from('tags')
-      .update({ label: newLabel, icon: newIcon })
-      .eq('id', tag.id)
+    const { error: updateError } = await supabase.from('tags').update({ label: newLabel, icon: newIcon }).eq('id', tag.id)
     if (updateError) {
       setError(updateError.message)
       return
     }
     if (labelChanged) {
-      const { data: affected, error: fetchError } = await supabase
-        .from('places')
-        .select('id, tags')
-        .contains('tags', [tag.label])
+      const { data: affected, error: fetchError } = await supabase.from('places').select('id, tags').contains('tags', [tag.label])
       if (fetchError) {
         setError(fetchError.message)
       } else if (affected?.length) {
@@ -204,9 +168,7 @@ export default function CityView({ cityStop, view }) {
   }
 
   async function handleDeleteTag(tag) {
-    const confirmed = window.confirm(
-      `Delete "${tag.label}"? Places already tagged with it keep the label but lose the icon match.`
-    )
+    const confirmed = window.confirm(`Delete "${tag.label}"? Places already tagged with it keep the label but lose the icon match.`)
     if (!confirmed) return
     const { error: deleteError } = await supabase.from('tags').delete().eq('id', tag.id)
     if (deleteError) {
@@ -262,14 +224,7 @@ export default function CityView({ cityStop, view }) {
     const nextOrder = allPlaces.length > 0 ? Math.max(...allPlaces.map((p) => p.sort_order ?? 0)) + 1 : 0
     const { data, error: insertError } = await supabase
       .from('places')
-      .insert({
-        city_stop_id: cityStop.id,
-        title: trimmedTitle,
-        area: area.trim() || null,
-        notes: notes.trim() || null,
-        tags: formTags,
-        sort_order: nextOrder,
-      })
+      .insert({ city_stop_id: cityStop.id, title: trimmedTitle, area: area.trim() || null, notes: notes.trim() || null, tags: formTags, sort_order: nextOrder })
       .select()
       .single()
     if (insertError) {
@@ -285,14 +240,9 @@ export default function CityView({ cityStop, view }) {
     setSubmitting(false)
   }
 
-  async function handleToggle(item) {
-    const nextStatus = item.status === 'done' ? 'active' : 'done'
-    const completed_at = nextStatus === 'done' ? new Date().toISOString() : null
-    setAllPlaces((prev) => prev.map((p) => (p.id === item.id ? { ...p, status: nextStatus, completed_at } : p)))
-    const { error: updateError } = await supabase
-      .from('places')
-      .update({ status: nextStatus, completed_at })
-      .eq('id', item.id)
+  async function handleUpdatePlace(item, patch) {
+    setAllPlaces((prev) => prev.map((p) => (p.id === item.id ? { ...p, ...patch } : p)))
+    const { error: updateError } = await supabase.from('places').update(patch).eq('id', item.id)
     if (updateError) setError(updateError.message)
   }
 
@@ -302,35 +252,31 @@ export default function CityView({ cityStop, view }) {
     if (deleteError) setError(deleteError.message)
   }
 
+  async function handleAddToItinerary(item) {
+    setAllPlaces((prev) => prev.map((p) => (p.id === item.id ? { ...p, in_itinerary: true } : p)))
+    const { error: updateError } = await supabase.from('places').update({ in_itinerary: true }).eq('id', item.id)
+    if (updateError) setError(updateError.message)
+  }
+
   async function handleSchedule(item, date, time) {
-    setAllPlaces((prev) =>
-      prev.map((p) => (p.id === item.id ? { ...p, scheduled_date: date, scheduled_time: time } : p))
-    )
-    const { error: updateError } = await supabase
-      .from('places')
-      .update({ scheduled_date: date, scheduled_time: time })
-      .eq('id', item.id)
+    setAllPlaces((prev) => prev.map((p) => (p.id === item.id ? { ...p, scheduled_date: date, scheduled_time: time } : p)))
+    const { error: updateError } = await supabase.from('places').update({ scheduled_date: date, scheduled_time: time }).eq('id', item.id)
     if (updateError) setError(updateError.message)
     else setSelectedDay(date)
   }
 
   async function handleUnschedule(item) {
-    setAllPlaces((prev) =>
-      prev.map((p) => (p.id === item.id ? { ...p, scheduled_date: null, scheduled_time: null } : p))
-    )
-    const { error: updateError } = await supabase
-      .from('places')
-      .update({ scheduled_date: null, scheduled_time: null })
-      .eq('id', item.id)
+    setAllPlaces((prev) => prev.map((p) => (p.id === item.id ? { ...p, scheduled_date: null, scheduled_time: null } : p)))
+    const { error: updateError } = await supabase.from('places').update({ scheduled_date: null, scheduled_time: null }).eq('id', item.id)
     if (updateError) setError(updateError.message)
-    else setSelectedDay('ideas')
+    else setSelectedDay('other')
   }
 
-  async function handleMoveIdea(item, direction) {
-    const index = ideaItems.findIndex((i) => i.id === item.id)
+  async function handleMoveOther(item, direction) {
+    const index = otherItems.findIndex((i) => i.id === item.id)
     const swapIndex = direction === 'up' ? index - 1 : index + 1
-    if (swapIndex < 0 || swapIndex >= ideaItems.length) return
-    const other = ideaItems[swapIndex]
+    if (swapIndex < 0 || swapIndex >= otherItems.length) return
+    const other = otherItems[swapIndex]
     setAllPlaces((prev) =>
       prev.map((p) => {
         if (p.id === item.id) return { ...p, sort_order: other.sort_order }
@@ -347,95 +293,8 @@ export default function CityView({ cityStop, view }) {
 
   if (!cityStop) return null
 
-  const tagFilterOptions = [...tags, { id: '__done__', label: 'Done', icon: '✅' }]
-
   return (
     <div>
-      <form onSubmit={handleAdd} className="mb-6 rounded-lg border border-line bg-card p-3">
-        <div className="flex gap-2">
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Add a place…"
-            className="flex-1 rounded-md border border-line bg-paper px-3 py-2 font-body text-sm text-ink placeholder:text-ink/35 focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal"
-          />
-          <button
-            type="submit"
-            disabled={submitting || !title.trim()}
-            className="flex-shrink-0 rounded-md bg-teal px-4 py-2 font-body text-sm font-medium text-paper transition-opacity hover:opacity-90 disabled:opacity-40"
-          >
-            Add
-          </button>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => setDetailsOpen((open) => !open)}
-          className="mt-2 font-mono text-[10px] uppercase tracking-wide text-teal underline decoration-dotted underline-offset-2 hover:text-teal/70"
-        >
-          {detailsOpen ? 'Hide details' : '+ Add area, notes, or tags'}
-          {!detailsOpen && formTags.length > 0 && ` (${formTags.length} tag${formTags.length === 1 ? '' : 's'})`}
-        </button>
-
-        {detailsOpen && (
-          <div className="mt-3 space-y-3">
-            <input
-              value={area}
-              onChange={(e) => setArea(e.target.value)}
-              placeholder="Area (optional) — e.g. Greenwich Village"
-              list="area-suggestions"
-              className="w-full rounded-md border border-line bg-paper px-3 py-2 font-body text-sm text-ink placeholder:text-ink/35 focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal"
-            />
-            <datalist id="area-suggestions">
-              {areaOptions.map((a) => (
-                <option key={a} value={a} />
-              ))}
-            </datalist>
-
-            <div>
-              <div className="mb-1 flex items-center justify-between">
-                <span className="font-mono text-[10px] uppercase tracking-wide text-ink/40">Notes</span>
-                <button
-                  type="button"
-                  onClick={handleAddLink}
-                  className="rounded-full border border-line px-2.5 py-1 font-mono text-[10px] uppercase tracking-wide text-teal hover:border-teal"
-                >
-                  🔗 Link
-                </button>
-              </div>
-              <textarea
-                ref={notesRef}
-                value={notes}
-                onChange={(e) => {
-                  setNotes(e.target.value)
-                  setLinkHint(null)
-                }}
-                placeholder="Notes… select text and hit Link to turn it into a hyperlink"
-                rows={3}
-                className="w-full rounded-md border border-line bg-paper px-3 py-2 font-body text-sm text-ink placeholder:text-ink/35 focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal"
-              />
-              {linkHint && <p className="mt-1 font-mono text-[10px] text-stamp">{linkHint}</p>}
-            </div>
-
-            <div>
-              <span className="mb-1.5 block font-mono text-[10px] uppercase tracking-wide text-ink/40">
-                Tags — a place can have more than one
-              </span>
-              <TagPicker
-                tags={tags}
-                selected={formTags}
-                onToggle={toggleFormTag}
-                onCreateTag={handleCreateTag}
-                onUpdateTag={handleUpdateTag}
-                onDeleteTag={handleDeleteTag}
-                onMoveTag={handleMoveTag}
-                allowManage
-              />
-            </div>
-          </div>
-        )}
-      </form>
-
       {error && <p className="mb-3 font-mono text-xs text-stamp">{error}</p>}
 
       {view === 'itinerary' && (
@@ -447,9 +306,7 @@ export default function CityView({ cityStop, view }) {
                 type="button"
                 onClick={() => setSelectedDay(d.dateStr)}
                 className={`rounded-full border px-3 py-1.5 font-mono text-xs uppercase tracking-wide transition-colors ${
-                  selectedDay === d.dateStr
-                    ? 'border-teal bg-teal text-paper'
-                    : 'border-line bg-card text-ink/60 hover:border-teal hover:text-ink'
+                  selectedDay === d.dateStr ? 'border-teal bg-teal text-paper' : 'border-line bg-card text-ink/60 hover:border-teal hover:text-ink'
                 }`}
               >
                 {d.label}
@@ -457,71 +314,66 @@ export default function CityView({ cityStop, view }) {
             ))}
             <button
               type="button"
-              onClick={() => setSelectedDay('ideas')}
+              onClick={() => setSelectedDay('other')}
               className={`rounded-full border px-3 py-1.5 font-mono text-xs uppercase tracking-wide transition-colors ${
-                selectedDay === 'ideas'
-                  ? 'border-gold bg-gold text-paper'
-                  : 'border-line bg-card text-ink/60 hover:border-gold hover:text-ink'
+                selectedDay === 'other' ? 'border-gold bg-gold text-paper' : 'border-line bg-card text-ink/60 hover:border-gold hover:text-ink'
               }`}
             >
               📝 Other
             </button>
           </div>
 
-          {selectedDay && selectedDay !== 'ideas' && (
+          {selectedDay && selectedDay !== 'other' && (
             <p className="mb-2 font-display text-base font-semibold text-teal">{formatDateHeader(selectedDay)}</p>
           )}
-
-          {selectedDay && selectedDay !== 'ideas' && <DayNotes cityStopId={cityStop.id} date={selectedDay} />}
-
-          {selectedDay && selectedDay !== 'ideas' && (
+          {selectedDay && selectedDay !== 'other' && <DayNotes cityStopId={cityStop.id} date={selectedDay} />}
+          {selectedDay && selectedDay !== 'other' && (
             <p className="mb-2 font-mono text-[10px] uppercase tracking-wide text-ink/40">Scheduled places</p>
           )}
 
           <div className="rounded-lg border border-line bg-card px-4">
             {loading && <p className="py-6 text-center font-mono text-xs text-ink/40">Loading…</p>}
 
-            {!loading && selectedDay === 'ideas' && (
+            {!loading && selectedDay === 'other' && (
               <>
-                {ideaItems.length === 0 && (
+                {otherItems.length === 0 && (
                   <p className="py-6 text-center font-body text-sm text-ink/40">
-                    Nothing here yet. Add a place above, or "Move back to ideas" from a scheduled one.
+                    Nothing here yet. Go to Places or Areas and use "+ Add to itinerary" on things you've decided on.
                   </p>
                 )}
-                {ideaItems.map((item, idx) => (
+                {otherItems.map((item, idx) => (
                   <PlaceRow
                     key={item.id}
                     item={item}
                     tagLookup={tagLookup}
+                    mode="other"
+                    dayList={dayList}
                     showReorder
-                    onMoveUp={idx > 0 ? () => handleMoveIdea(item, 'up') : null}
-                    onMoveDown={idx < ideaItems.length - 1 ? () => handleMoveIdea(item, 'down') : null}
-                    onToggle={handleToggle}
+                    onMoveUp={idx > 0 ? () => handleMoveOther(item, 'up') : null}
+                    onMoveDown={idx < otherItems.length - 1 ? () => handleMoveOther(item, 'down') : null}
                     onRemove={handleRemove}
                     onSchedule={handleSchedule}
-                    onUnschedule={handleUnschedule}
+                    onUpdate={handleUpdatePlace}
                   />
                 ))}
               </>
             )}
 
-            {!loading && selectedDay !== 'ideas' && selectedDay && (
+            {!loading && selectedDay !== 'other' && selectedDay && (
               <>
                 {(!itineraryByDate[selectedDay] || itineraryByDate[selectedDay].length === 0) && (
-                  <p className="py-6 text-center font-body text-sm text-ink/40">
-                    Nothing scheduled yet — schedule an idea to see it here.
-                  </p>
+                  <p className="py-6 text-center font-body text-sm text-ink/40">Nothing scheduled yet — schedule something from Other to see it here.</p>
                 )}
                 {itineraryByDate[selectedDay]?.map((item) => (
                   <PlaceRow
                     key={item.id}
                     item={item}
                     tagLookup={tagLookup}
+                    mode="scheduled"
                     showReorder={false}
-                    onToggle={handleToggle}
                     onRemove={handleRemove}
-                    onSchedule={handleSchedule}
                     onUnschedule={handleUnschedule}
+                    onUpdate={handleUpdatePlace}
                   />
                 ))}
               </>
@@ -532,76 +384,93 @@ export default function CityView({ cityStop, view }) {
 
       {view === 'areas' && (
         <>
-          {areaOptions.length === 0 ? (
-            <p className="py-6 text-center font-body text-sm text-ink/40">
-              No areas yet — add an area to a place to see it here.
-            </p>
+          {boroughOptions.length === 0 ? (
+            <p className="py-6 text-center font-body text-sm text-ink/40">No areas yet — add places with an area on the Places tab.</p>
           ) : (
             <>
-              <div className="mb-2 flex flex-wrap gap-2">
-                {displayedAreaOptions.map((a) => {
-                  const isActive = areaFilter === a
-                  const isHidden = hiddenAreas.includes(a)
-                  return (
-                    <div key={a} className="group relative">
-                      <button
-                        type="button"
-                        onClick={() => handleAreaClick(a)}
-                        className={`rounded-full border px-3 py-1.5 font-mono text-xs uppercase tracking-wide transition-colors ${
-                          isHidden
-                            ? 'border-dashed border-line/70 bg-transparent text-ink/30'
-                            : isActive
-                            ? 'border-gold bg-gold text-paper'
-                            : 'border-line bg-card text-ink/50 hover:border-gold hover:text-ink'
-                        }`}
-                      >
-                        📍 {a}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleToggleHideArea(a)
-                        }}
-                        aria-label={isHidden ? `Unhide ${a}` : `Hide ${a}`}
-                        className="absolute -right-1.5 -top-1.5 hidden h-4 w-4 items-center justify-center rounded-full bg-ink text-[8px] text-paper group-hover:flex"
-                      >
-                        {isHidden ? '+' : '✕'}
-                      </button>
-                    </div>
-                  )
-                })}
+              <div className="mb-3 flex flex-wrap gap-2">
+                {boroughOptions.map((b) => (
+                  <button
+                    key={b}
+                    type="button"
+                    onClick={() => {
+                      setSelectedBorough((prev) => (prev === b ? null : b))
+                      setSelectedArea(null)
+                    }}
+                    className={`rounded-full border px-3 py-1.5 font-body text-sm transition-colors ${
+                      selectedBorough === b ? 'border-teal bg-teal text-paper' : 'border-line bg-card text-ink/60 hover:border-teal hover:text-ink'
+                    }`}
+                  >
+                    {b}
+                  </button>
+                ))}
               </div>
-              {hiddenAreas.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setShowHiddenAreas((s) => !s)}
-                  className="mb-4 block font-mono text-[10px] uppercase tracking-wide text-ink/40 underline decoration-dotted underline-offset-2 hover:text-ink"
-                >
-                  {showHiddenAreas ? 'Hide hidden areas again' : `Show hidden areas (${hiddenAreas.length})`}
-                </button>
+
+              {selectedBorough && (
+                <>
+                  <div className="mb-2 flex flex-wrap gap-2">
+                    {displayedAreaOptions.map((a) => {
+                      const isActive = selectedArea === a
+                      const isHidden = hiddenAreas.includes(a)
+                      return (
+                        <div key={a} className="group relative">
+                          <button
+                            type="button"
+                            onClick={() => handleAreaClick(a)}
+                            className={`rounded-full border px-3 py-1.5 font-mono text-xs uppercase tracking-wide transition-colors ${
+                              isHidden
+                                ? 'border-dashed border-line/70 bg-transparent text-ink/30'
+                                : isActive
+                                ? 'border-gold bg-gold text-paper'
+                                : 'border-line bg-card text-ink/50 hover:border-gold hover:text-ink'
+                            }`}
+                          >
+                            📍 {a}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleToggleHideArea(a)
+                            }}
+                            aria-label={isHidden ? `Unhide ${a}` : `Hide ${a}`}
+                            className="absolute -right-1.5 -top-1.5 hidden h-4 w-4 items-center justify-center rounded-full bg-ink text-[8px] text-paper group-hover:flex"
+                          >
+                            {isHidden ? '+' : '✕'}
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  {hiddenAreas.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowHiddenAreas((s) => !s)}
+                      className="mb-4 block font-mono text-[10px] uppercase tracking-wide text-ink/40 underline decoration-dotted underline-offset-2 hover:text-ink"
+                    >
+                      {showHiddenAreas ? 'Hide hidden areas again' : `Show hidden areas (${hiddenAreas.length})`}
+                    </button>
+                  )}
+                </>
               )}
 
               <div className="rounded-lg border border-line bg-card px-4">
                 {loading && <p className="py-6 text-center font-mono text-xs text-ink/40">Loading…</p>}
-                {!loading && !areaFilter && (
-                  <p className="py-6 text-center font-body text-sm text-ink/40">Select an area above.</p>
-                )}
-                {!loading && areaFilter && areaFiltered.length === 0 && (
-                  <p className="py-6 text-center font-body text-sm text-ink/40">Nothing saved here yet.</p>
-                )}
+                {!loading && !selectedBorough && <p className="py-6 text-center font-body text-sm text-ink/40">Select a borough above.</p>}
+                {!loading && selectedBorough && !selectedArea && <p className="py-6 text-center font-body text-sm text-ink/40">Select an area above.</p>}
+                {!loading && selectedArea && areaFiltered.length === 0 && <p className="py-6 text-center font-body text-sm text-ink/40">Nothing saved here yet.</p>}
                 {!loading &&
-                  areaFilter &&
+                  selectedArea &&
                   areaFiltered.map((item) => (
                     <PlaceRow
                       key={item.id}
                       item={item}
                       tagLookup={tagLookup}
+                      mode="reference"
                       showReorder={false}
-                      onToggle={handleToggle}
                       onRemove={handleRemove}
-                      onSchedule={handleSchedule}
-                      onUnschedule={handleUnschedule}
+                      onAddToItinerary={handleAddToItinerary}
+                      onUpdate={handleUpdatePlace}
                     />
                   ))}
               </div>
@@ -612,18 +481,76 @@ export default function CityView({ cityStop, view }) {
 
       {view === 'places' && (
         <>
+          <form onSubmit={handleAdd} className="mb-6 rounded-lg border border-line bg-card p-3">
+            <div className="flex gap-2">
+              <input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Add a place…"
+                className="flex-1 rounded-md border border-line bg-paper px-3 py-2 font-body text-sm text-ink placeholder:text-ink/35 focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal"
+              />
+              <button
+                type="submit"
+                disabled={submitting || !title.trim()}
+                className="flex-shrink-0 rounded-md bg-teal px-4 py-2 font-body text-sm font-medium text-paper transition-opacity hover:opacity-90 disabled:opacity-40"
+              >
+                Add
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDetailsOpen((open) => !open)}
+              className="mt-2 font-mono text-[10px] uppercase tracking-wide text-teal underline decoration-dotted underline-offset-2 hover:text-teal/70"
+            >
+              {detailsOpen ? 'Hide details' : '+ Add area, notes, or tags'}
+              {!detailsOpen && formTags.length > 0 && ` (${formTags.length} tag${formTags.length === 1 ? '' : 's'})`}
+            </button>
+            {detailsOpen && (
+              <div className="mt-3 space-y-3">
+                <input
+                  value={area}
+                  onChange={(e) => setArea(e.target.value)}
+                  placeholder="Area (optional) — e.g. Greenwich Village"
+                  className="w-full rounded-md border border-line bg-paper px-3 py-2 font-body text-sm text-ink placeholder:text-ink/35 focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal"
+                />
+                <div>
+                  <div className="mb-1 flex items-center justify-between">
+                    <span className="font-mono text-[10px] uppercase tracking-wide text-ink/40">Notes</span>
+                    <button type="button" onClick={handleAddLink} className="rounded-full border border-line px-2.5 py-1 font-mono text-[10px] uppercase tracking-wide text-teal hover:border-teal">
+                      🔗 Link
+                    </button>
+                  </div>
+                  <textarea
+                    ref={notesRef}
+                    value={notes}
+                    onChange={(e) => {
+                      setNotes(e.target.value)
+                      setLinkHint(null)
+                    }}
+                    placeholder="Notes… select text and hit Link to turn it into a hyperlink"
+                    rows={3}
+                    className="w-full rounded-md border border-line bg-paper px-3 py-2 font-body text-sm text-ink placeholder:text-ink/35 focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal"
+                  />
+                  {linkHint && <p className="mt-1 font-mono text-[10px] text-stamp">{linkHint}</p>}
+                </div>
+                <div>
+                  <span className="mb-1.5 block font-mono text-[10px] uppercase tracking-wide text-ink/40">Tags — a place can have more than one</span>
+                  <TagPicker tags={tags} selected={formTags} onToggle={toggleFormTag} onCreateTag={handleCreateTag} onUpdateTag={handleUpdateTag} onDeleteTag={handleDeleteTag} onMoveTag={handleMoveTag} allowManage />
+                </div>
+              </div>
+            )}
+          </form>
+
           <div className="mb-4 flex flex-wrap gap-2">
-            {tagFilterOptions.map((opt) => {
+            {tags.map((opt) => {
               const isActive = tagFilter === opt.label
               return (
                 <button
                   key={opt.id}
                   type="button"
-                  onClick={() => handleFilterClick(opt.label)}
+                  onClick={() => setTagFilter((prev) => (prev === opt.label ? null : opt.label))}
                   className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 font-body text-sm transition-colors ${
-                    isActive
-                      ? 'border-teal bg-teal text-paper'
-                      : 'border-line bg-card text-ink/60 hover:border-teal hover:text-ink'
+                    isActive ? 'border-teal bg-teal text-paper' : 'border-line bg-card text-ink/60 hover:border-teal hover:text-ink'
                   }`}
                 >
                   <span aria-hidden="true">{opt.icon}</span>
@@ -635,27 +562,12 @@ export default function CityView({ cityStop, view }) {
 
           <div className="rounded-lg border border-line bg-card px-4">
             {loading && <p className="py-6 text-center font-mono text-xs text-ink/40">Loading…</p>}
-            {!loading && !tagFilter && (
-              <p className="py-6 text-center font-body text-sm text-ink/40">Select a category above.</p>
-            )}
-            {!loading && tagFilter && placesFiltered.length === 0 && (
-              <p className="py-6 text-center font-body text-sm text-ink/40">
-                {isDoneTagView ? 'Nothing marked done yet.' : 'Nothing here yet.'}
-              </p>
-            )}
+            {!loading && !tagFilter && <p className="py-6 text-center font-body text-sm text-ink/40">Select a category above.</p>}
+            {!loading && tagFilter && placesFiltered.length === 0 && <p className="py-6 text-center font-body text-sm text-ink/40">Nothing here yet.</p>}
             {!loading &&
               tagFilter &&
               placesFiltered.map((item) => (
-                <PlaceRow
-                  key={item.id}
-                  item={item}
-                  tagLookup={tagLookup}
-                  showReorder={false}
-                  onToggle={handleToggle}
-                  onRemove={handleRemove}
-                  onSchedule={handleSchedule}
-                  onUnschedule={handleUnschedule}
-                />
+                <PlaceRow key={item.id} item={item} tagLookup={tagLookup} mode="reference" showReorder={false} onRemove={handleRemove} onAddToItinerary={handleAddToItinerary} onUpdate={handleUpdatePlace} />
               ))}
           </div>
         </>

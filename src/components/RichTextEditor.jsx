@@ -100,8 +100,14 @@ export default function RichTextEditor({ content, onSave, placeholder, rows = 8 
   return (
     <div>
       <div className="mb-2 flex flex-wrap gap-1.5">
+        <button type="button" onClick={() => insertLinePrefix('## ')} className="rounded-md border border-line px-2 py-1 font-mono text-[10px] uppercase text-ink/60 hover:border-teal hover:text-ink">
+          # Heading
+        </button>
         <button type="button" onClick={() => wrapSelection('**')} className="rounded-md border border-line px-2 py-1 font-mono text-[10px] font-bold uppercase text-ink/60 hover:border-teal hover:text-ink">
           B
+        </button>
+        <button type="button" onClick={() => wrapSelection('__')} className="rounded-md border border-line px-2 py-1 font-mono text-[10px] uppercase text-ink/60 underline hover:border-teal hover:text-ink">
+          U
         </button>
         <button type="button" onClick={() => insertLinePrefix('- ')} className="rounded-md border border-line px-2 py-1 font-mono text-[10px] uppercase text-ink/60 hover:border-teal hover:text-ink">
           • Bullet

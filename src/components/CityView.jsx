@@ -45,7 +45,6 @@ export default function CityView({ cityStop, view }) {
   const [selectedBorough, setSelectedBorough] = useState(null)
   const [selectedArea, setSelectedArea] = useState(null)
   const [areaTagFilter, setAreaTagFilter] = useState(null)
-  const [areaTagPickerOpen, setAreaTagPickerOpen] = useState(true)
   const [hiddenAreas, setHiddenAreas] = useState([])
   const [showHiddenAreas, setShowHiddenAreas] = useState(false)
 
@@ -57,6 +56,7 @@ export default function CityView({ cityStop, view }) {
   const [title, setTitle] = useState('')
   const [area, setArea] = useState('')
   const [notes, setNotes] = useState('')
+  const [mapsLink, setMapsLink] = useState('')
   const [formTags, setFormTags] = useState([])
   const [linkHint, setLinkHint] = useState(null)
   const [submitting, setSubmitting] = useState(false)
@@ -172,7 +172,6 @@ export default function CityView({ cityStop, view }) {
   function handleAreaClick(label) {
     setSelectedArea((prev) => (prev === label ? null : label))
     setAreaTagFilter(null)
-    setAreaTagPickerOpen(true)
   }
 
   async function handleToggleHideArea(areaName) {
@@ -283,7 +282,15 @@ export default function CityView({ cityStop, view }) {
     const nextOrder = allPlaces.length > 0 ? Math.max(...allPlaces.map((p) => p.sort_order ?? 0)) + 1 : 0
     const { data, error: insertError } = await supabase
       .from('places')
-      .insert({ city_stop_id: cityStop.id, title: trimmedTitle, area: area.trim() || null, notes: notes.trim() || null, tags: formTags, sort_order: nextOrder })
+      .insert({
+        city_stop_id: cityStop.id,
+        title: trimmedTitle,
+        area: area.trim() || null,
+        notes: notes.trim() || null,
+        tags: formTags,
+        maps_url: mapsLink.trim() || null,
+        sort_order: nextOrder,
+      })
       .select()
       .single()
     if (insertError) {
@@ -293,6 +300,7 @@ export default function CityView({ cityStop, view }) {
       setTitle('')
       setArea('')
       setNotes('')
+      setMapsLink('')
       setFormTags([])
       setLinkHint(null)
     }
@@ -517,50 +525,21 @@ export default function CityView({ cityStop, view }) {
               {!loading && selectedBorough && !selectedArea && <p className="py-6 text-center font-body text-sm text-ink/40">Select an area above.</p>}
 
               {selectedArea && areaTagOptions.length > 0 && (
-                (!areaTagFilter || areaTagPickerOpen) ? (
-                  <div className="mb-3 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAreaTagFilter(null)
-                        setAreaTagPickerOpen(false)
-                      }}
-                      className={`rounded-full border px-3 py-1.5 font-body text-sm transition-colors ${
-                        !areaTagFilter ? 'border-teal bg-teal text-paper' : 'border-line bg-card text-ink/60 hover:border-teal hover:text-ink'
-                      }`}
-                    >
-                      ⭐ All
-                    </button>
+                <div className="mb-3 flex items-center gap-2">
+                  <span className="font-mono text-[10px] uppercase tracking-wide text-ink/40">Category:</span>
+                  <select
+                    value={areaTagFilter || ''}
+                    onChange={(e) => setAreaTagFilter(e.target.value || null)}
+                    className="rounded-md border border-line bg-card px-2 py-1 font-mono text-xs text-ink focus:border-teal focus:outline-none"
+                  >
+                    <option value="">All</option>
                     {areaTagOptions.map((label) => (
-                      <button
-                        key={label}
-                        type="button"
-                        onClick={() => {
-                          setAreaTagFilter(label)
-                          setAreaTagPickerOpen(false)
-                        }}
-                        className="flex items-center gap-1.5 rounded-full border border-line bg-card px-3 py-1.5 font-body text-sm text-ink/60 hover:border-teal hover:text-ink"
-                      >
-                        <span aria-hidden="true">{tagLookup[label] ?? '🏷️'}</span>
-                        {label}
-                      </button>
+                      <option key={label} value={label}>
+                        {tagLookup[label] ?? ''} {label}
+                      </option>
                     ))}
-                  </div>
-                ) : (
-                  <div className="mb-3 flex items-center gap-2">
-                    <span className="flex items-center gap-1.5 rounded-full border border-teal bg-teal px-3 py-1.5 font-body text-sm text-paper">
-                      <span aria-hidden="true">{tagLookup[areaTagFilter] ?? '🏷️'}</span>
-                      {areaTagFilter}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setAreaTagPickerOpen(true)}
-                      className="font-mono text-[10px] uppercase tracking-wide text-ink/40 underline decoration-dotted underline-offset-2 hover:text-ink"
-                    >
-                      change
-                    </button>
-                  </div>
-                )
+                  </select>
+                </div>
               )}
 
               {!loading && selectedArea && areaFilteredByTag.length === 0 && <p className="py-6 text-center font-body text-sm text-ink/40">Nothing saved here yet.</p>}
@@ -617,6 +596,12 @@ export default function CityView({ cityStop, view }) {
                   placeholder="Area (optional) — e.g. Greenwich Village"
                   className="w-full rounded-md border border-line bg-paper px-3 py-2 font-body text-sm text-ink placeholder:text-ink/35 focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal"
                 />
+                <input
+                  value={mapsLink}
+                  onChange={(e) => setMapsLink(e.target.value)}
+                  placeholder="Google Maps link (optional)"
+                  className="w-full rounded-md border border-line bg-paper px-3 py-2 font-body text-sm text-ink placeholder:text-ink/35 focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal"
+                />
                 <div>
                   <div className="mb-1 flex items-center justify-between">
                     <span className="font-mono text-[10px] uppercase tracking-wide text-ink/40">Notes</span>
@@ -646,15 +631,21 @@ export default function CityView({ cityStop, view }) {
           </form>
           )}
 
-          {(!tagFilter || tagPickerOpen) ? (
+          {tags.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setTagPickerOpen((o) => !o)}
+              className="mb-2 font-mono text-[10px] uppercase tracking-wide text-ink/40 underline decoration-dotted underline-offset-2 hover:text-ink"
+            >
+              {tagPickerOpen ? '− Collapse categories' : '+ Show categories'}
+            </button>
+          )}
+
+          {tagPickerOpen && (
             <div className="mb-3 flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={() => {
-                  const next = tagFilter === '__all__' ? null : '__all__'
-                  setTagFilter(next)
-                  setTagPickerOpen(next === null)
-                }}
+                onClick={() => setTagFilter((prev) => (prev === '__all__' ? null : '__all__'))}
                 className={`rounded-full border px-3 py-1.5 font-body text-sm transition-colors ${
                   tagFilter === '__all__' ? 'border-teal bg-teal text-paper' : 'border-line bg-card text-ink/60 hover:border-teal hover:text-ink'
                 }`}
@@ -667,11 +658,7 @@ export default function CityView({ cityStop, view }) {
                   <button
                     key={opt.id}
                     type="button"
-                    onClick={() => {
-                      const next = tagFilter === opt.label ? null : opt.label
-                      setTagFilter(next)
-                      setTagPickerOpen(next === null)
-                    }}
+                    onClick={() => setTagFilter((prev) => (prev === opt.label ? null : opt.label))}
                     className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 font-body text-sm transition-colors ${
                       isActive ? 'border-teal bg-teal text-paper' : 'border-line bg-card text-ink/60 hover:border-teal hover:text-ink'
                     }`}
@@ -682,19 +669,12 @@ export default function CityView({ cityStop, view }) {
                 )
               })}
             </div>
-          ) : (
-            <div className="mb-3 flex items-center gap-2">
-              <span className="rounded-full border border-teal bg-teal px-3 py-1.5 font-body text-sm text-paper">
-                {tagFilter === '__all__' ? '⭐ All' : `${tagLookup[tagFilter] ?? ''} ${tagFilter}`}
-              </span>
-              <button
-                type="button"
-                onClick={() => setTagPickerOpen(true)}
-                className="font-mono text-[10px] uppercase tracking-wide text-ink/40 underline decoration-dotted underline-offset-2 hover:text-ink"
-              >
-                change category
-              </button>
-            </div>
+          )}
+
+          {!tagPickerOpen && tagFilter && (
+            <p className="mb-3 font-mono text-[10px] uppercase tracking-wide text-ink/50">
+              Showing: {tagFilter === '__all__' ? '⭐ All' : `${tagLookup[tagFilter] ?? ''} ${tagFilter}`}
+            </p>
           )}
 
           {tagFilter && (
@@ -715,54 +695,42 @@ export default function CityView({ cityStop, view }) {
               </div>
 
               {sortMode === 'borough' && (
-                <div className="mt-2">
-                  {!sortBorough ? (
-                    <div className="flex flex-wrap gap-2">
-                      {sortBoroughOptions.map((b) => (
-                        <button
-                          key={b}
-                          type="button"
-                          onClick={() => setSortBorough(b)}
-                          className="rounded-full border border-line bg-card px-3 py-1.5 font-body text-sm text-ink/60 hover:border-teal hover:text-ink"
-                        >
-                          {b}
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <span className="rounded-full border border-teal bg-teal px-3 py-1.5 font-body text-sm text-paper">{sortBorough}</span>
-                      <button type="button" onClick={() => setSortBorough(null)} className="font-mono text-[10px] uppercase tracking-wide text-ink/40 underline decoration-dotted underline-offset-2 hover:text-ink">
-                        change borough
-                      </button>
-                    </div>
-                  )}
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="font-mono text-[10px] uppercase tracking-wide text-ink/40">Borough:</span>
+                  <select
+                    value={sortBorough || ''}
+                    onChange={(e) => setSortBorough(e.target.value || null)}
+                    className="rounded-md border border-line bg-card px-2 py-1 font-mono text-xs text-ink focus:border-teal focus:outline-none"
+                  >
+                    <option value="" disabled>
+                      Select a borough…
+                    </option>
+                    {sortBoroughOptions.map((b) => (
+                      <option key={b} value={b}>
+                        {b}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               )}
 
               {sortMode === 'area' && (
-                <div className="mt-2">
-                  {!sortArea ? (
-                    <div className="flex flex-wrap gap-2">
-                      {sortAreaOptions.map((a) => (
-                        <button
-                          key={a}
-                          type="button"
-                          onClick={() => setSortArea(a)}
-                          className="rounded-full border border-line bg-card px-3 py-1.5 font-mono text-xs uppercase tracking-wide text-ink/60 hover:border-teal hover:text-ink"
-                        >
-                          📍 {a}
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <span className="rounded-full border border-teal bg-teal px-3 py-1.5 font-mono text-xs uppercase tracking-wide text-paper">📍 {sortArea}</span>
-                      <button type="button" onClick={() => setSortArea(null)} className="font-mono text-[10px] uppercase tracking-wide text-ink/40 underline decoration-dotted underline-offset-2 hover:text-ink">
-                        change area
-                      </button>
-                    </div>
-                  )}
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="font-mono text-[10px] uppercase tracking-wide text-ink/40">Area:</span>
+                  <select
+                    value={sortArea || ''}
+                    onChange={(e) => setSortArea(e.target.value || null)}
+                    className="rounded-md border border-line bg-card px-2 py-1 font-mono text-xs text-ink focus:border-teal focus:outline-none"
+                  >
+                    <option value="" disabled>
+                      Select an area…
+                    </option>
+                    {sortAreaOptions.map((a) => (
+                      <option key={a} value={a}>
+                        {a}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               )}
             </div>

@@ -38,6 +38,7 @@ export default function PlaceRow({
   const [draftTitle, setDraftTitle] = useState(item.title)
   const [draftArea, setDraftArea] = useState(item.area || '')
   const [draftNotes, setDraftNotes] = useState(item.notes || '')
+  const [draftMapsUrl, setDraftMapsUrl] = useState(item.maps_url || '')
 
   const badge = sourceBadge(item.source)
 
@@ -45,11 +46,17 @@ export default function PlaceRow({
     setDraftTitle(item.title)
     setDraftArea(item.area || '')
     setDraftNotes(item.notes || '')
+    setDraftMapsUrl(item.maps_url || '')
     setEditing(true)
   }
 
   function saveEdit() {
-    onUpdate?.(item, { title: draftTitle.trim(), area: draftArea.trim() || null, notes: draftNotes.trim() || null })
+    onUpdate?.(item, {
+      title: draftTitle.trim(),
+      area: draftArea.trim() || null,
+      notes: draftNotes.trim() || null,
+      maps_url: draftMapsUrl.trim() || null,
+    })
     setEditing(false)
   }
 
@@ -71,6 +78,12 @@ export default function PlaceRow({
           value={draftArea}
           onChange={(e) => setDraftArea(e.target.value)}
           placeholder="Area"
+          className="mb-2 w-full rounded-md border border-line bg-paper px-2 py-1.5 font-body text-sm text-ink placeholder:text-ink/35 focus:border-teal focus:outline-none"
+        />
+        <input
+          value={draftMapsUrl}
+          onChange={(e) => setDraftMapsUrl(e.target.value)}
+          placeholder="Google Maps link"
           className="mb-2 w-full rounded-md border border-line bg-paper px-2 py-1.5 font-body text-sm text-ink placeholder:text-ink/35 focus:border-teal focus:outline-none"
         />
         <textarea

@@ -1,6 +1,6 @@
 const LIST_LINE = /^(\s*)-\s+(\[( |x)\]\s+)?(.*)$/
-const HEADER_LINE = /^(#{1,3})\s+(.*)$/
-const INLINE = /(\*\*(.+?)\*\*)|(\[([^\]]+)\]\((https?:\/\/[^\s)]+)\))/g
+const HEADER_LINE = /^(#{1,6})\s+(.*)$/
+const INLINE = /(\*\*(.+?)\*\*)|(__(.+?)__)|(\[([^\]]+)\]\((https?:\/\/[^\s)]+)\))/g
 
 function renderInline(text, keyPrefix) {
   const parts = []
@@ -13,15 +13,17 @@ function renderInline(text, keyPrefix) {
     if (match[1]) {
       parts.push(<strong key={`${keyPrefix}-${key++}`}>{match[2]}</strong>)
     } else if (match[3]) {
+      parts.push(<u key={`${keyPrefix}-${key++}`}>{match[4]}</u>)
+    } else if (match[5]) {
       parts.push(
         <a
           key={`${keyPrefix}-${key++}`}
-          href={match[5]}
+          href={match[7]}
           target="_blank"
           rel="noreferrer"
           className="text-teal underline decoration-dotted underline-offset-2 hover:text-teal/70"
         >
-          {match[4]}
+          {match[6]}
         </a>
       )
     }
@@ -94,11 +96,12 @@ export default function RichNotes({ content, onToggleCheckbox }) {
     <div className="space-y-2">
       {blocks.map((block, bi) => {
         if (block.type === 'header') {
-          const Tag = block.level === 1 ? 'h3' : 'h4'
+          const sizeClass =
+            block.level === 1 ? 'text-xl' : block.level === 2 ? 'text-lg' : block.level === 3 ? 'text-base' : block.level === 4 ? 'text-sm' : 'text-xs uppercase tracking-wide'
           return (
-            <Tag key={bi} className="font-display font-semibold text-teal">
+            <p key={bi} className={`font-display font-semibold text-teal ${sizeClass}`}>
               {renderInline(block.text, `h${bi}`)}
-            </Tag>
+            </p>
           )
         }
         if (block.type === 'paragraph') {

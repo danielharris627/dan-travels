@@ -42,15 +42,20 @@ function parseBlocks(text) {
   let i = 0
 
   while (i < rawLines.length) {
-    const line = rawLines[i]
-    if (line.trim() === '') {
+    let blankCount = 0
+    while (i < rawLines.length && rawLines[i].trim() === '') {
+      blankCount++
       i++
-      continue
     }
+    if (i >= rawLines.length) break
+    const line = rawLines[i]
+    // blankCount of 1 is the normal single-line-break gap already handled by
+    // block spacing; anything beyond that is an intentional extra gap.
+    const extraGap = Math.max(0, blankCount - 1)
 
     const headerMatch = line.match(HEADER_LINE)
     if (headerMatch) {
-      blocks.push({ type: 'header', level: headerMatch[1].length, text: headerMatch[2], lineIndex: i })
+      blocks.push({ type: 'header', level: headerMatch[1].length, text: headerMatch[2], lineIndex: i, extraGap })
       i++
       continue
     }
@@ -70,7 +75,7 @@ function parseBlocks(text) {
         })
         i++
       }
-      blocks.push({ type: 'list', items })
+      blocks.push({ type: 'list', items, extraGap })
       continue
     }
 
@@ -79,7 +84,7 @@ function parseBlocks(text) {
       paraLines.push(rawLines[i])
       i++
     }
-    blocks.push({ type: 'paragraph', text: paraLines.join('\n'), lineIndex: i - paraLines.length })
+    blocks.push({ type: 'paragraph', text: paraLines.join('\n'), lineIndex: i - paraLines.length, extraGap })
   }
 
   return blocks
@@ -93,27 +98,29 @@ export default function RichNotes({ content, onToggleCheckbox }) {
   }
 
   return (
-    <div className="space-y-2">
+    <div>
       {blocks.map((block, bi) => {
+        const marginTop = bi === 0 ? 0 : 0.5 + (block.extraGap || 0) * 0.75
+        const style = { marginTop: `${marginTop}rem` }
         if (block.type === 'header') {
           const sizeClass =
             block.level === 1 ? 'text-xl' : block.level === 2 ? 'text-lg' : block.level === 3 ? 'text-base' : block.level === 4 ? 'text-sm' : 'text-xs uppercase tracking-wide'
           return (
-            <p key={bi} className={`font-display font-semibold text-teal ${sizeClass}`}>
+            <p key={bi} style={style} className={`font-display font-semibold text-teal ${sizeClass}`}>
               {renderInline(block.text, `h${bi}`)}
             </p>
           )
         }
         if (block.type === 'paragraph') {
           return (
-            <p key={bi} className="whitespace-pre-wrap font-body text-sm text-ink/80">
+            <p key={bi} style={style} className="whitespace-pre-wrap font-body text-sm text-ink/80">
               {renderInline(block.text, `p${bi}`)}
             </p>
           )
         }
         // list
         return (
-          <div key={bi} className="space-y-1">
+          <div key={bi} style={style} className="space-y-1">
             {block.items.map((item, ii) => (
               <div
                 key={ii}

@@ -131,7 +131,7 @@ export default function RichTextEditor({ content, onSave, placeholder, rows = 8 
         onChange={(e) => setDraft(e.target.value)}
         rows={rows}
         placeholder={placeholder || '**bold**, - bullets (Indent/Outdent to nest), - [ ] checklist items, [text](url) links'}
-        className="w-full rounded-md border border-line bg-paper px-3 py-2 font-mono text-sm text-ink placeholder:text-ink/35 focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal"
+        className="min-h-[50vh] w-full rounded-md border border-line bg-paper px-3 py-2 font-mono text-sm text-ink placeholder:text-ink/35 focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal"
       />
       {linkHint && <p className="mt-1 font-mono text-[10px] text-stamp">{linkHint}</p>}
       <div className="mt-2 flex gap-2">

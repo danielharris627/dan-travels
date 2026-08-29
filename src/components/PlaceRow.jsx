@@ -138,8 +138,19 @@ export default function PlaceRow({
               <button
                 type="button"
                 onClick={() => {
-                  const url = item.maps_url || `https://www.google.com/maps/search/?api=1&query=${item.lat},${item.lng}`
-                  window.open(url, '_blank', 'noopener,noreferrer')
+                  const httpsUrl = item.maps_url || `https://www.google.com/maps/search/?api=1&query=${item.lat},${item.lng}`
+                  const isAndroid = /Android/i.test(navigator.userAgent)
+                  if (isAndroid) {
+                    // Explicitly targets the Maps app package via Android's
+                    // intent system, rather than relying on generic link
+                    // handling — a different mechanism than target="_blank"
+                    // or window.open, which didn't escape standalone mode.
+                    const withoutScheme = httpsUrl.replace(/^https?:\/\//, '')
+                    const intentUrl = `intent://${withoutScheme}#Intent;scheme=https;package=com.google.android.apps.maps;S.browser_fallback_url=${encodeURIComponent(httpsUrl)};end`
+                    window.location.href = intentUrl
+                  } else {
+                    window.open(httpsUrl, '_blank', 'noopener,noreferrer')
+                  }
                 }}
                 className="font-mono text-[10px] uppercase tracking-wide text-teal underline decoration-dotted underline-offset-2 hover:text-teal/70"
               >

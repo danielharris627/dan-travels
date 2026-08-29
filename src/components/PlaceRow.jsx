@@ -135,14 +135,16 @@ export default function PlaceRow({
 
           <div className="mt-1.5 flex flex-wrap items-center gap-3">
             {(item.maps_url || (item.lat && item.lng)) && (
-              <a
-                href={item.maps_url || `https://www.google.com/maps/search/?api=1&query=${item.lat},${item.lng}`}
-                target="_blank"
-                rel="noreferrer"
+              <button
+                type="button"
+                onClick={() => {
+                  const url = item.maps_url || `https://www.google.com/maps/search/?api=1&query=${item.lat},${item.lng}`
+                  window.open(url, '_blank', 'noopener,noreferrer')
+                }}
                 className="font-mono text-[10px] uppercase tracking-wide text-teal underline decoration-dotted underline-offset-2 hover:text-teal/70"
               >
                 🗺️ Maps
-              </a>
+              </button>
             )}
 
             {mode === 'reference' && !item.in_itinerary && (

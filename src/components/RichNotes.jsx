@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 const LIST_LINE = /^(\s*)-\s+(\[( |x)\]\s+)?(.*)$/
 const HEADER_LINE = /^(#{1,6})\s+(.*)$/
 const INLINE = /(\*\*(.+?)\*\*)|(__(.+?)__)|(\[([^\]]+)\]\((https?:\/\/[^\s)]+)\))/g
@@ -92,6 +94,16 @@ function parseBlocks(text) {
 
 export default function RichNotes({ content, onToggleCheckbox }) {
   const blocks = parseBlocks(content)
+  const [collapsed, setCollapsed] = useState(new Set())
+
+  function toggleCollapse(lineIndex) {
+    setCollapsed((prev) => {
+      const next = new Set(prev)
+      if (next.has(lineIndex)) next.delete(lineIndex)
+      else next.add(lineIndex)
+      return next
+    })
+  }
 
   if (blocks.length === 0) {
     return <p className="font-body text-sm text-ink/40">Nothing written yet.</p>
@@ -118,34 +130,57 @@ export default function RichNotes({ content, onToggleCheckbox }) {
             </p>
           )
         }
-        // list
+        // list — single pass: an item is hidden if some earlier item at a
+        // lower indent is collapsed and we haven't yet returned to that
+        // indent level or shallower.
+        let hideBelowIndent = null
         return (
           <div key={bi} style={style} className="space-y-1">
-            {block.items.map((item, ii) => (
-              <div
-                key={ii}
-                className="flex items-start gap-2 font-body text-sm text-ink/80"
-                style={{ marginLeft: `${item.indent * 1.25}rem` }}
-              >
-                {item.isChecklist ? (
-                  <button
-                    type="button"
-                    onClick={() => onToggleCheckbox?.(item.lineIndex)}
-                    className={`mt-0.5 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border ${
-                      item.checked ? 'border-stamp bg-stamp text-paper' : 'border-line hover:border-teal'
-                    }`}
-                    aria-pressed={item.checked}
-                  >
-                    {item.checked && <span className="text-[9px]">✓</span>}
-                  </button>
-                ) : (
-                  <span className="mt-0.5 flex-shrink-0 text-ink/40">–</span>
-                )}
-                <span className={item.checked ? 'text-ink/40 line-through decoration-stamp/60' : ''}>
-                  {renderInline(item.text, `l${bi}-${ii}`)}
-                </span>
-              </div>
-            ))}
+            {block.items.map((item, ii) => {
+              if (hideBelowIndent !== null) {
+                if (item.indent > hideBelowIndent) return null
+                hideBelowIndent = null
+              }
+              const hasChildren = block.items[ii + 1] && block.items[ii + 1].indent > item.indent
+              const isCollapsed = collapsed.has(item.lineIndex)
+              if (hasChildren && isCollapsed) hideBelowIndent = item.indent
+
+              return (
+                <div
+                  key={ii}
+                  className="flex items-start gap-2 font-body text-sm text-ink/80"
+                  style={{ marginLeft: `${item.indent * 1.25}rem` }}
+                >
+                  {hasChildren ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleCollapse(item.lineIndex)}
+                      aria-label={isCollapsed ? 'Expand' : 'Collapse'}
+                      className="mt-0.5 flex h-4 w-4 flex-shrink-0 items-center justify-center text-ink/40 hover:text-teal"
+                    >
+                      {isCollapsed ? '▸' : '▾'}
+                    </button>
+                  ) : item.isChecklist ? (
+                    <button
+                      type="button"
+                      onClick={() => onToggleCheckbox?.(item.lineIndex)}
+                      className={`mt-0.5 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border ${
+                        item.checked ? 'border-stamp bg-stamp text-paper' : 'border-line hover:border-teal'
+                      }`}
+                      aria-pressed={item.checked}
+                    >
+                      {item.checked && <span className="text-[9px]">✓</span>}
+                    </button>
+                  ) : (
+                    <span className="mt-0.5 flex-shrink-0 text-ink/40">–</span>
+                  )}
+                  <span className={item.checked ? 'text-ink/40 line-through decoration-stamp/60' : ''}>
+                    {renderInline(item.text, `l${bi}-${ii}`)}
+                    {hasChildren && isCollapsed && <span className="ml-1 text-ink/30">…</span>}
+                  </span>
+                </div>
+              )
+            })}
           </div>
         )
       })}

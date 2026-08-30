@@ -101,6 +101,8 @@ export default function CityView({ cityStop, view }) {
   }
 
   const tagLookup = Object.fromEntries(tags.map((t) => [t.label, t.icon]))
+  const tagLabelsInUse = new Set(allPlaces.flatMap((p) => p.tags || []))
+  const tagsInThisCity = tags.filter((t) => tagLabelsInUse.has(t.label))
 
   const otherItems = allPlaces.filter((p) => p.in_itinerary && !p.scheduled_date)
   const itineraryByDate = {}
@@ -652,7 +654,7 @@ export default function CityView({ cityStop, view }) {
               >
                 ⭐ All
               </button>
-              {tags.map((opt) => {
+              {tagsInThisCity.map((opt) => {
                 const isActive = tagFilter === opt.label
                 return (
                   <button

@@ -162,8 +162,9 @@ export default function CityView({ cityStop, view }) {
   }
 
   const boroughOptions = [...new Set(allPlaces.map((p) => p.borough).filter(Boolean))].sort()
-  const areaOptionsInBorough = selectedBorough
-    ? [...new Set(allPlaces.filter((p) => p.borough === selectedBorough).map((p) => p.area).filter(Boolean))].sort()
+  const effectiveBorough = boroughOptions.length === 1 ? boroughOptions[0] : selectedBorough
+  const areaOptionsInBorough = effectiveBorough
+    ? [...new Set(allPlaces.filter((p) => p.borough === effectiveBorough).map((p) => p.area).filter(Boolean))].sort()
     : []
   const visibleAreaOptions = areaOptionsInBorough.filter((a) => !hiddenAreas.includes(a))
   const displayedAreaOptions = showHiddenAreas ? areaOptionsInBorough : visibleAreaOptions
@@ -456,25 +457,27 @@ export default function CityView({ cityStop, view }) {
             <p className="py-6 text-center font-body text-sm text-ink/40">No areas yet — add places with an area on the Places tab.</p>
           ) : (
             <>
-              <div className="mb-3 flex flex-wrap gap-2">
-                {boroughOptions.map((b) => (
-                  <button
-                    key={b}
-                    type="button"
-                    onClick={() => {
-                      setSelectedBorough((prev) => (prev === b ? null : b))
-                      setSelectedArea(null)
-                    }}
-                    className={`rounded-full border px-3 py-1.5 font-body text-sm transition-colors ${
-                      selectedBorough === b ? 'border-teal bg-teal text-paper' : 'border-line bg-card text-ink/60 hover:border-teal hover:text-ink'
-                    }`}
-                  >
-                    {b}
-                  </button>
-                ))}
-              </div>
+              {boroughOptions.length > 1 && (
+                <div className="mb-3 flex flex-wrap gap-2">
+                  {boroughOptions.map((b) => (
+                    <button
+                      key={b}
+                      type="button"
+                      onClick={() => {
+                        setSelectedBorough((prev) => (prev === b ? null : b))
+                        setSelectedArea(null)
+                      }}
+                      className={`rounded-full border px-3 py-1.5 font-body text-sm transition-colors ${
+                        selectedBorough === b ? 'border-teal bg-teal text-paper' : 'border-line bg-card text-ink/60 hover:border-teal hover:text-ink'
+                      }`}
+                    >
+                      {b}
+                    </button>
+                  ))}
+                </div>
+              )}
 
-              {selectedBorough && (
+              {effectiveBorough && (
                 <>
                   <div className="mb-2 flex flex-wrap gap-2">
                     {displayedAreaOptions.map((a) => {
@@ -523,8 +526,8 @@ export default function CityView({ cityStop, view }) {
               )}
 
               {loading && <p className="py-6 text-center font-mono text-xs text-ink/40">Loading…</p>}
-              {!loading && !selectedBorough && <p className="py-6 text-center font-body text-sm text-ink/40">Select a borough above.</p>}
-              {!loading && selectedBorough && !selectedArea && <p className="py-6 text-center font-body text-sm text-ink/40">Select an area above.</p>}
+              {!loading && !effectiveBorough && <p className="py-6 text-center font-body text-sm text-ink/40">Select a borough above.</p>}
+              {!loading && effectiveBorough && !selectedArea && <p className="py-6 text-center font-body text-sm text-ink/40">Select an area above.</p>}
 
               {selectedArea && areaTagOptions.length > 0 && (
                 <div className="mb-3 flex items-center gap-2">

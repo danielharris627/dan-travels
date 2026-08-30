@@ -72,6 +72,9 @@ export default function CityView({ cityStop, view }) {
     loadHiddenAreas()
     setSelectedDay(defaultDay)
     setSelectedBorough(null)
+    setSortMode('title')
+    setSortBorough(null)
+    setSortArea(null)
     setSelectedArea(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cityStop?.id])
@@ -692,7 +695,7 @@ export default function CityView({ cityStop, view }) {
                   className="rounded-md border border-line bg-card px-2 py-1 font-mono text-xs text-ink focus:border-teal focus:outline-none"
                 >
                   <option value="title">Alphabetical</option>
-                  <option value="borough">By borough</option>
+                  {boroughOptions.length > 1 && <option value="borough">By borough</option>}
                   <option value="area">By area</option>
                   <option value="distance">Closest to me</option>
                 </select>
